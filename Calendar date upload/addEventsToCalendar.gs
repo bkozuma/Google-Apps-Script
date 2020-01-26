@@ -14,6 +14,12 @@
 // Name: addEventsToCalendar
 // Author: Bruce Kozuma
 //
+// Version: 0.2
+// Date: 2020/01/25
+// - Removed End Date as I do multiday things as single day events
+// - Added ability to create all day events
+//
+//
 // Version: 0.1
 // Date: 2020/01/24
 // - Initial release
@@ -35,59 +41,74 @@ function addEventsToCalendar()
   const cUI = SpreadsheetApp.getUi();
 
 
-  // Get email of user invoking this script
-  // Production
-  const cUserEmail = Session.getActiveUser().getEmail();
-  // Debug
-//  const cUserEmail = 'd' + Session.getActiveUser().getEmail();
-
-
   // Get the associated calendar
   var eventCal = CalendarApp.getDefaultCalendar();
 
 
-  // ColumnscreateEvent(title, startTime, endTime, options)  // Columns for spreadsheet data
+  // Columns for spreadsheet data
   var cTitleCol = 1;
   var title = '';
   var cStartDateCol = 2;
   var startDate = '';
   var cStartTimeCol = 3;
   var startTime = '';
-  var cEndDateCol = 4;
-  var endDate = '';
-  var cEndTimeCol = 5;
+  var cEndTimeCol = 4;
   var endTime = '';
+  var cAllDayCol = 5;
+  var allDay = '';
   var cDescriptionCol = 6;
   var description = '';
+
+
+  // Track number of events
+  var numEventsCreated = 0;
 
 
   // Header row
   const cHeaderRow = 1;
   var currentRow = cHeaderRow + 1;
-  var eventData = '';
   var eventOptions = '';
   var event = [];
 
 
   // Get event data for a row
-  var range = 'R' +  currentRow + 'C' + cTitleCol + ':' + 'R' + currentRow + 'C' + cEndTimeCol;
-  eventData = cSheet.getRange(range).getValues();
+  var range = 'R' +  currentRow + 'C' + cTitleCol + ':' + 'R' + currentRow + 'C' + cDescriptionCol;
+  var eventData = cSheet.getRange(range).getValues();
   title = eventData[0][cTitleCol - 1];
+  allDay = eventData[0][cAllDayCol - 1];
   while ('' != title) {
 
     // Get rest of data for the event
-    // getValues returns a two dimentional array of the data in row co9lumn format
+    // getValues returns a two dimentional array of the data in row column format
     // Since we're only getting one row at a time, the row is always [0]
-    startTime = constructDateTime(eventData[0][cStartDateCol - 1], eventData[0][cStartTimeCol - 1]);
-    endTime = constructDateTime(eventData[0][cEndDateCol - 1], eventData[0][cEndTimeCol - 1]);
-    description = eventData[0][cDescriptionCol - 1];
-    eventOptions = {
-      'description': description,
-      'sendInvites': 'False'
-    }
-    event = eventCal.createEvent(String(title), new Date(startTime), new Date(endTime), eventOptions);
+    if ('' != allDay) {
+      // Create an all day event
+      // https://developers.google.com/apps-script/reference/calendar/calendar#createalldayeventtitle,-date,-options
+      startTime = eventData[0][cStartDateCol - 1];
+      description = eventData[0][cDescriptionCol - 1];
+      eventOptions = {
+        'description': description,
+        'sendInvites': 'False'
+      }
+      event = eventCal.createAllDayEvent(String(title), new Date(startTime), eventOptions);
 
-    cUI.alert('Created event: ' + event.getTitle() + ' ' + event.getStartTime() + ' ' + event.getEndTime());
+    } else {
+      // Create a timed event
+      // https://developers.google.com/apps-script/reference/calendar/calendar#createeventtitle,-starttime,-endtime,-options
+      startTime = constructDateTime(eventData[0][cStartDateCol - 1], eventData[0][cStartTimeCol - 1]);
+      endTime = constructDateTime(eventData[0][cStartDateCol - 1], eventData[0][cEndTimeCol - 1]);
+      description = eventData[0][cDescriptionCol - 1];
+      eventOptions = {
+        'description': description,
+        'sendInvites': 'False'
+      }
+      event = eventCal.createEvent(String(title), new Date(startTime), new Date(endTime), eventOptions);
+
+    } // Get rest of data for the event
+
+
+    // Increment number of events created
+    ++numEventsCreated;
 
  
     // Prepare for the next row
@@ -95,9 +116,12 @@ function addEventsToCalendar()
     range = 'R' +  currentRow + 'C' + cTitleCol + ':' + 'R' + currentRow + 'C' + cEndTimeCol;
     eventData = cSheet.getRange(range).getValues();
     title = eventData[0][cTitleCol - 1];
+    allDay = eventData[0][cAllDayCol - 1];
     
   } // Get event data for a row
 
+  
+  cUI.alert('# events created: ' + numEventsCreated);
   return;
   
 } // addEventsToCalendar
