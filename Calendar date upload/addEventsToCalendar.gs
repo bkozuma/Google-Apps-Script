@@ -14,6 +14,11 @@
 // Name: addEventsToCalendar
 // Author: Bruce Kozuma
 //
+// Version: 0.3
+// Date: 2020/01/25
+// - Fixed bug where check for all day events was using the wrong column
+//
+//
 // Version: 0.2
 // Date: 2020/01/25
 // - Removed End Date as I do multiday things as single day events
@@ -113,7 +118,7 @@ function addEventsToCalendar()
  
     // Prepare for the next row
     ++currentRow;
-    range = 'R' +  currentRow + 'C' + cTitleCol + ':' + 'R' + currentRow + 'C' + cEndTimeCol;
+    range = 'R' +  currentRow + 'C' + cTitleCol + ':' + 'R' + currentRow + 'C' + cDescriptionCol;
     eventData = cSheet.getRange(range).getValues();
     title = eventData[0][cTitleCol - 1];
     allDay = eventData[0][cAllDayCol - 1];
