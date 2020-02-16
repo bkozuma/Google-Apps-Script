@@ -6,6 +6,7 @@
 * Gathers work time from Google Calendar and puts into the a Google Sheet
 * Algorithm is to calculate working hours as follows:
 * - Note: Javascript dates are calculated as miliseconds from January 1, 1970
+* - Weeks that have been submitted are ignored
 * - Days that have values are ignored
 * - Usual working hours for a normal working day:
 *   - Earliest event start time is 07:30
@@ -26,7 +27,7 @@
 *   - Working time on holidays
 *   - Time spent working before or after normal working hours not in a gap between events
 *
-* Referenece: https://towardsdatascience.com/creating-calendar-events-using-google-sheets-data-with-appscript-203b26446ce9
+* Reference: https://towardsdatascience.com/creating-calendar-events-using-google-sheets-data-with-appscript-203b26446ce9
 *
 * @param {} No input parameters
 * @return {} No return code
@@ -34,6 +35,13 @@
 //
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
+//
+// Version: 0.2
+// Date: 2020/02/16
+// - Adjust for new column postions
+// - Weeks that have been submitted are ignored
+// - Typos in comments fixed
+//
 //
 // Version: 0.1
 // Date: 2020/02/15
@@ -67,13 +75,15 @@ function getWorkingTimeFromCalendar()
   let weekStarting = '';
   const cWeekEndingCol = 2;
   let weekEnding = '';
-  const cMonCol = 3;
-  const cTueCol = 4;
-  const cWedCol = 5;
-  const cThuCol = 6;
-  const cFriCol = 7;
-  const cSatCol = 8;
-  const cSunCol = 9;
+  const cSubmittedCol = 3;
+  let hasBeenSubmitted = '';
+  const cMonCol = 5;
+  const cTueCol = 6;
+  const cWedCol = 7;
+  const cThuCol = 8;
+  const cFriCol = 9;
+  const cSatCol = 10;
+  const cSunCol = 11;
   const cNumDaysInWeek = cSunCol - cMonCol + 1;
   const cWeekendDay = [cSatCol, cSunCol];
   let dayOffset = 0;
@@ -82,7 +92,7 @@ function getWorkingTimeFromCalendar()
 
   // This offset needs to be 3 to account for the difference between the day offset
   // and the position of the Saturday column 
-  const cWeekendDayOffset = 3;
+  const cWeekendDayOffset = 5;
 
 
   // End of working day in miliseconds from 00:00
@@ -92,7 +102,7 @@ function getWorkingTimeFromCalendar()
 
 
   // Track number of weeks handled
-  let numWeeks = 0;
+  let numWeeksProcessed = 0;
 
 
   // Header row
@@ -109,12 +119,16 @@ function getWorkingTimeFromCalendar()
   weekEnding = eventData[0][cWeekEndingCol - 1];
   let dayEvents = {};
   let numDayEvents = 0;
+  let beginWorkingDay = 0;
+  let endWorkingDay = 0;
   let eventIndex = 0;
   let eventTitle = '';
-  let eventStartTime = '';
-  let eventEndTime = '';
+  let eventStartTime = 0;
+  let eventEndTime = 0;
   let workingTime = 0;
   let nonWorkingTime = 0;
+  let afterHoursTime = 0;
+  // Potentially get non-working time values from a separate Sheet?
   const cNonWorkingTime = [ 'OoO', 'Out', 'Transit'];
   const cNotFound = -1;
   const cDefaultEarliestStartTime = new Date('12/31/3000');
@@ -125,8 +139,17 @@ function getWorkingTimeFromCalendar()
   let wasEventAccepted = false;
   while ('' != weekStarting) {
 
+    // Has week been submitted
+    hasBeenSubmitted = cSheet.getRange('R' + currentRow + 'C' + cSubmittedCol).getValue();
+    if ('' == hasBeenSubmitted) {
+      // Week has NOT been submitted
+      ++numWeeksProcessed;
+
+    } // Has week been submitted
+
+
     // Get data for Monday (same as week starting) then loop through days of week
-    while (dayOffset < cNumDaysInWeek) {
+    while ((dayOffset < cNumDaysInWeek) && ('' == hasBeenSubmitted)) {
 
       // If cell is empty, calculate working time
       range = 'R' + currentRow + 'C' + (cMonCol + dayOffset);
@@ -220,7 +243,6 @@ function getWorkingTimeFromCalendar()
           // There were events during a day
 
           // Is this a weekend day?
-// HERE
           if (cNotFound == cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) {
             // Not a weekend day, so working time includes after hours time
             workingTime = (latestEventEndTime - earliestEventStartTime + afterHoursTime) / cMilisecondsPerHour;
@@ -261,7 +283,6 @@ function getWorkingTimeFromCalendar()
 
 
     // Prepare for the next row
-    ++numWeeks;
     ++currentRow;
     range = 'R' +  currentRow + 'C' + cWeekStartingCol + ':' + 'R' + currentRow + 'C' + cSunCol;
     eventData = cSheet.getRange(range).getValues();
@@ -273,7 +294,7 @@ function getWorkingTimeFromCalendar()
 
 
   // Finish up
-  cUI.alert(cScriptName, 'Processed weeks: ' + numWeeks, cUI.ButtonSet.OK);
+  cUI.alert(cScriptName, 'Processed weeks: ' + numWeeksProcessed, cUI.ButtonSet.OK);
   return;
 
 } // getWorkingTimeFromCalendar
