@@ -11,15 +11,15 @@
 * - Events that are ignored
 *   - All day events
 *   - Non-accepted events
-*   - Non-working time e.g., Transit, Out; there's a list)
+*   - Non-working time (e.g., Transit, Out; there's a list)
 * - Usual working hours for a normal working day:
-*   - Deafault earliest event start time is 07:30
+*   - Default earliest event start time is 07:30
 *   - Default latest event end time is 17:00
 * - Events before or after usual working hours
 *   - Working time is calculated as event end time - event start time
 *   - A running total of such working time per day is kept and added to normal working time
 * - Saturday and Sunday are not usual working days (there's a list)
-*   - Working time calculate like events before or after usual working hours
+*   - Working time calculated like events before or after usual working hours
 * - Algorithm (accounts for gaps between events)
 *   - Scan the day's events for Start and Stop events
 *   - If found, set bounds of working day appropriately
@@ -47,6 +47,11 @@
 //
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
+//
+// Version: 0.6
+// Date: 2020/04/08
+// - Re-wrote again to have more explicit rules
+//
 //
 // Version: 0.5
 // Date: 2020/04/01
@@ -125,7 +130,7 @@ function getWorkingTimeFromCalendar()
 
   // End of working day in miliseconds from 00:00
   const cMilisecondsPerHour = 1000*60*60;
-  const cWorkingDayBegins = '07:30';
+  const cWorkingDayBegins = '07:15';
   const cWorkingDayEnds = '17:00';
 
 
@@ -148,6 +153,7 @@ function getWorkingTimeFromCalendar()
   let dayEvents = {};
   let numDayEvents = 0;
   let beginWorkingDay = 0;
+  let defaultBeginWorkingDay = 0;
   let endWorkingDay = 0;
   let eventIndex = 0;
   let eventTitle = '';
@@ -155,14 +161,13 @@ function getWorkingTimeFromCalendar()
   let eventEndTime = 0;
   let workingTime = 0;
   let nonWorkingTime = 0;
+  let beforeHoursTime = 0;
   let afterHoursTime = 0;
   // Potentially get non-working time values from a separate Sheet?
   const cNonWorkingTime = [ 'OoO', 'Out', 'Out of office', 'Transit'];
   const cStartEvent = 'Start';
   const cStopEvent = 'Stop';
   const cNotFound = -1;
-  let defaultEarliestEventBeginTime = 0;
-  let defaultLatestEventEndTime = 0;
   let isAllDayEvent = false;
   let wasEventAccepted = false;
   let weekendWorkingTime = 0;
@@ -192,9 +197,8 @@ function getWorkingTimeFromCalendar()
 
         // Set default beginning and ending of the day
         beginWorkingDay = new Date(currentDay + ' ' + cWorkingDayBegins);
-        defaultEarliestEventBeginTime = beginWorkingDay;
+        defaultBeginWorkingDay = beginWorkingDay;
         endWorkingDay = new Date(currentDay + ' ' + cWorkingDayEnds);
-        defaultLatestEventEndTime = endWorkingDay;
 
 
         // Get the events for the day
@@ -229,91 +233,125 @@ function getWorkingTimeFromCalendar()
             // If no Start event found, default start of working day time is used
             if (cStartEvent == eventTitle) {
               beginWorkingDay = eventStartTime;
-              defaultEarliestEventBeginTime = beginWorkingDay;
-Browser.msgBox('Start event beginWorkingDay: ' + beginWorkingDay);
-
-            } // Is the event a Start event?
 
 
             // Is the event a Stop event?
-            // If it is, use the end time of the event to set the end of the working day
+            // If it is, use the start time of the event to set the end of the working day
             // If no Stop event found, the default end of working day time is used
-            if (cStopEvent == eventTitle) {
-              endWorkingDay = eventEndTime;
+            } else if (cStopEvent == eventTitle) {
+              endWorkingDay = eventStartTime;
 
-            } // Is the event a Stop event?
+
+              // Also blank out after hours time since we set a new end of the working day
+              afterHoursTime = 0;
 
 
             // Is event on a weekend day?
-            if (cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) {
+            // Assumption is that Start and Stop events don't occur on weekends
+            } else if (cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) {
               // For weekend days, working time is just the time of the appointments
               weekendWorkingTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
 
-            } else {
 
-              // Is the event a non-working event?
-              if (cNotFound != cNonWorkingTime.indexOf(eventTitle)) {
-                // Event is a non-working event, so subtract time from the daily running total
+            // Is the event a non-working event?
+            } else if (cNotFound != cNonWorkingTime.indexOf(eventTitle)) {
+              // Event is a non-working event, so subtract time from the daily running total
 
-                // Is the end of the non-working event after the normal start of the work day?
-                // This can happen when I commute to work and don't have meetings until Stand up,
-                // so I want time from the end of my commute included in the working hours
-                if (eventEndTime < defaultLatestEventEndTime) {
-                  // Yes, so set beginning of working day to end of event
-                  beginWorkingDay = eventEndTime;
-
-                } else if (eventStartTime < defaultEarliestEventBeginTime) {
-                  // The non-working event start time falls within the working day (e.g., time for a personal event),
-                  // so count the event duration as non-working time
-                  nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
-
-                } // Is the end of the non-working event after the normal start of the work day?
+              // Is the end of the non-working event before the normal start of the work day?
+              // This can happen when I commute to work and don't have meetings until Stand up,
+              // so I want time from the end of my commute included in the working hours
+              if (eventEndTime < beginWorkingDay) {
+                // Non-working event occurs before the start of the working day,
+                // so reset beginning of working day to end of the event
+                beginWorkingDay = eventEndTime;
 
 
-                // If the non-working event is after the end of the working day, nothing needs to be done as
-                // the event won't be included in the calculation for working time
-
-              } else {
-                // Not a non-working event
-
-
-                // Earlier event?
-                if (eventStartTime < defaultEarliestEventBeginTime) {
-                  // Start of event is before beginning of default working day, so don't reset earliest appointment,
-                  // but add event duration to tally
-                  afterHoursTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
-
-                } else if ((eventStartTime >= beginWorkingDay) && (defaultEarliestEventBeginTime == beginWorkingDay)) {
-                  // Yes, so set beginning of working day to beginning of event, e.g., I started work later than normal
-                  beginWorkingDay = eventStartTime;
-
-                } // Earlier event?
+              // Non-working event during the working day?
+              } else if ((eventStartTime < endWorkingDay) && (eventEndTime < endWorkingDay)) {
+                // Non-working event start time falls within the working day (e.g., time for a personal event),
+                // so count the event duration as non-working time
+                nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
 
 
-                // Later end time?
-                if (eventEndTime > endWorkingDay) {
-                  // End of event is after end of working day
-                  // Is end of the working day set to default?
-                  if (defaultLatestEventEndTime == endWorkingDay) {
-                    // Reset end of working day to end of the current appointment
-                    defaultLatestEventEndTime = eventEndTime;
-                    endWorkingDay = eventEndTime;
+              // Non-working event spans the end of the working day
+              } else if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
+               // Non-working event begins before the end of the working day and the event
+               // ends after the working day ends, then reset the end of the working day
+               // to the beginning of the event
+               // Events found after this one will be treated like working events after the
+               // end of the normal working day
+               endWorkingDay = eventStartTime;
 
-                  } else {
-                    // End of working day is not set to default, and not a stop event
-                    // so add event duration to tally
-                    afterHoursTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
+              } // Is the end of the non-working event after the normal start of the work day?
 
-                  } // Is end of the working day set to default?
 
-                } // Later end time?
+              // If the non-working event is after the end of the working day, nothing needs to be done as
+              // the event won't be included in the calculation for working time
 
-              } // Is the event a non-working event?
 
-            } // Skip the event if it is an all day event
+              // Not a non-working event, i.e., a working event
+              // Event ends before the working day?
+            } else if  (eventEndTime < beginWorkingDay) {
+              // End of the event is before beginning of working day,
+              // so add event duration to after hours time
+              beforeHoursTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
 
-          } // Is it a weekend day?
 
+              // Event ends at the beginning of the working day?
+            } else if (eventEndTime == beginWorkingDay) {
+              // Start and end of the event is before beginning of working day,
+              // so reset beginning of working day to start of event
+              beginWorkingDay = eventStartTime;
+
+
+              // Event spans beginning of working day
+            } else if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
+              // Event starts before the beginning of the working day AND
+              // end of the event is after the beginning of the working day
+              // so set the beginning of the working day to the start of the event
+              beginWorkingDay = eventStartTime;
+
+
+              // Event occurs after the beginning of working day and before the end of the working day
+              // Nothing needs to be done as the will be included in the calculation for working time
+
+
+            // Event starts after working day, starts after the default working day, and the default
+            // working day hasn't been changed, i.e., I started work late
+            } else if ((eventStartTime > beginWorkingDay) && (beginWorkingDay == defaultBeginWorkingDay)) {
+              // Start of event is after the default start of the working day
+              // and the default start of the day hasn't been changed
+              // so reset start of working day to beginning of the event
+              /*
+              Case 1: Event after 07:15, default not changed already, what happens? Change default
+              Case 2: Third even after first event, default changed already, what happens? Skip
+              */
+              beginWorkingDay = eventStartTime;
+
+
+            // Event spans end of the working day
+            } else if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
+              // Start of event is before the end of the working day and end of event is after
+              // end of working day, so reset end of working day to end of event
+              endWorkingDay = eventEndTime;
+
+
+            // Event starts at end the working day
+            } else if (eventStartTime == endWorkingDay) {
+              // Start of event is at the end of the working day
+              // so reset end of working day to end of event
+              endWorkingDay = eventEndTime;
+
+
+            // Event starts after the end of the working day
+            } else if (eventStartTime > endWorkingDay) {
+              // Start of event is after the end of the working day so
+              // so add event duration to after hours time
+              afterHoursTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
+
+            } // Is the event a Start event?
+
+          } // Skip the event if it is an all day event
 
           // Check next event
 //cUI.alert('earliestEventStartTime: ' + earliestEventStartTime + "\n" +
@@ -335,7 +373,7 @@ Browser.msgBox('Start event beginWorkingDay: ' + beginWorkingDay);
 
           } else {
             // Not a weekend day, so working time includes after hours time
-            workingTime = ((endWorkingDay - beginWorkingDay) / cMilisecondsPerHour)  + afterHoursTime;
+            workingTime = ((endWorkingDay - beginWorkingDay) / cMilisecondsPerHour) + beforeHoursTime + afterHoursTime;
 
             // Account for any non-working time
             workingTime -= nonWorkingTime;
