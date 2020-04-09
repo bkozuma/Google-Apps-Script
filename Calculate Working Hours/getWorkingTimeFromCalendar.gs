@@ -48,6 +48,12 @@
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
 //
+// Version: 0.7
+// Date: 2020/04/08
+// - Added case where an event starts at the default beginning of the work day
+// - Added case where an event starts at the default ending of the work day
+//
+//
 // Version: 0.6
 // Date: 2020/04/08
 // - Re-wrote again to have more explicit rules
@@ -224,8 +230,8 @@ function getWorkingTimeFromCalendar()
 
             // Get the title of the event, and the start and end time
             eventTitle = dayEvents[eventIndex].getTitle();
-            eventStartTime = dayEvents[eventIndex].getStartTime();
-            eventEndTime = dayEvents[eventIndex].getEndTime();
+            eventStartTime = new Date(dayEvents[eventIndex].getStartTime());
+            eventEndTime = new Date(dayEvents[eventIndex].getEndTime());
 
 
             // Is the event a Start event?
@@ -297,11 +303,12 @@ function getWorkingTimeFromCalendar()
               beforeHoursTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
 
 
-              // Event ends at the beginning of the working day?
-            } else if (eventEndTime == beginWorkingDay) {
+            // Event ends at the beginning of the working day?
+            // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
+            } else if (0 == eventEndTime - beginWorkingDay) {
               // Start and end of the event is before beginning of working day,
               // so reset beginning of working day to start of event
-              beginWorkingDay = eventStartTime;
+              beginWorkingDay = eventStartTime - 1;
 
 
               // Event spans beginning of working day
@@ -316,16 +323,23 @@ function getWorkingTimeFromCalendar()
               // Nothing needs to be done as the will be included in the calculation for working time
 
 
-            // Event starts after working day, starts after the default working day, and the default
-            // working day hasn't been changed, i.e., I started work late
-            } else if ((eventStartTime > beginWorkingDay) && (beginWorkingDay == defaultBeginWorkingDay)) {
+            // Event starts at the beginning working day
+            // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
+            } else if (eventStartTime - beginWorkingDay == 0) {
+              // Event starts at the beginning of the working day, either the default or
+              // another appointment with the same start time, so capture event and set the default
+              // working day to some nonsense value, which prevents the working day being set too late
+              // Useful in cases where I start work at the default time
+              defaultBeginWorkingDay = -1;
+
+
+            // Event starts after the beginning of the workday and the default hasn't changed
+            // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
+            } else if ((eventStartTime > beginWorkingDay) && (0 == beginWorkingDay - defaultBeginWorkingDay)) {
               // Start of event is after the default start of the working day
               // and the default start of the day hasn't been changed
               // so reset start of working day to beginning of the event
-              /*
-              Case 1: Event after 07:15, default not changed already, what happens? Change default
-              Case 2: Third even after first event, default changed already, what happens? Skip
-              */
+              // i.e., I started work after the default time
               beginWorkingDay = eventStartTime;
 
 
@@ -337,7 +351,8 @@ function getWorkingTimeFromCalendar()
 
 
             // Event starts at end the working day
-            } else if (eventStartTime == endWorkingDay) {
+            // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
+            } else if (eventStartTime - endWorkingDay == 0) {
               // Start of event is at the end of the working day
               // so reset end of working day to end of event
               endWorkingDay = eventEndTime;
