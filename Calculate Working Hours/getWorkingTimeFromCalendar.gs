@@ -13,7 +13,7 @@
 *   - Non-accepted events
 *   - Non-working time (e.g., Transit, Out; there's a list)
 * - Usual working hours for a normal working day:
-*   - Default earliest event start time is 07:30
+*   - Default earliest event start time is 07:15
 *   - Default latest event end time is 17:00
 * - Events before or after usual working hours
 *   - Working time is calculated as event end time - event start time
@@ -29,6 +29,10 @@
 *   - If the end of the non-working event is before the start of the work day,
       set the start of the work day to the end of the non-working event,
       e.g., a Transit calendar entry where I arrive before 07:30
+*   - If the start of the non-working event is before the start of the work day,
+      and the end of the non-working event is after the start of the work day,
+      set the start of the work day to the end of the non-working event,
+      e.g., I slept in
 *   - If the non-working event is after the end of the working day, nothing needs to be done as
       the event won't be included in the calculation for working time
 *   - For each working event, if the end of the event is after the stop time, event time is only day stop time - event start time
@@ -43,10 +47,42 @@
 *
 * @param {} No input parameters
 * @return {} No return code
+*
+*
+To do:
+// - To do: Handle non-working days that are not on weekends
+*
 */
 //
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
+//
+// Version: 0.12
+// Date: 2020/09/17
+//   - Added ability to handle events that start before the start of the work day,
+//      and the end after the start of the work day, e.g., I slept in
+//
+//
+// Version: 0.11
+// Date: 2020/08/29
+// - Removed additional code related to P141
+//
+//
+// Version: 0.10
+// Date: 2020/05/25
+// - Removed code related to P141
+// - Handled work on holidays or days off
+//
+//
+// Version: 0.9
+// Date: 2020/05/22
+// - Cleared beforeWorkTime
+//
+//
+// Version: 0.8
+// Date: 2020/05/06
+// - Handled case where start event occurs after beginning of the work day has been modified
+//
 //
 // Version: 0.7
 // Date: 2020/04/08
@@ -170,13 +206,16 @@ function getWorkingTimeFromCalendar()
   let beforeHoursTime = 0;
   let afterHoursTime = 0;
   // Potentially get non-working time values from a separate Sheet?
-  const cNonWorkingTime = [ 'OoO', 'Out', 'Out of office', 'Transit'];
+  const cOut = 'Out';
+  const cNonWorkingTime = [ 'OoO', cOut, 'Out of office', 'Transit'];
   const cStartEvent = 'Start';
   const cStopEvent = 'Stop';
   const cNotFound = -1;
   let isAllDayEvent = false;
   let wasEventAccepted = false;
   let weekendWorkingTime = 0;
+  let isHoliday = false;
+  const cHoliday = 'Holiday';
   while ('' != weekStarting) {
 
     // Has week been submitted
@@ -218,10 +257,23 @@ function getWorkingTimeFromCalendar()
           isAllDayEvent = dayEvents[eventIndex].isAllDayEvent();
 
 
+          // Get the title of the event, and the start and end time
+          eventTitle = dayEvents[eventIndex].getTitle();
+          eventStartTime = new Date(dayEvents[eventIndex].getStartTime());
+          eventEndTime = new Date(dayEvents[eventIndex].getEndTime());
+
+
           // Was the event accepted?
           wasEventAccepted = dayEvents[eventIndex].getMyStatus();
 
 
+          // Is it a holiday or work on a day off?
+          if ((-1 != eventTitle.indexOf(cHoliday)) || (isAllDayEvent && (cOut == eventTitle))) {
+            isHoliday = true;
+
+          } // Is it a holiday or work on a day off?
+
+          
           // Skip the event if it is an all day event or was not accepted
           // https://stackoverflow.com/questions/44102840/google-apps-script-for-calendar-searchfilter
           if ((!isAllDayEvent) &&
@@ -237,7 +289,7 @@ function getWorkingTimeFromCalendar()
             // Is the event a Start event?
             // If it is, use the start time of the event to set the start of the working day
             // If no Start event found, default start of working day time is used
-            if (cStartEvent == eventTitle) {
+            if ((cStartEvent == eventTitle) && (beginWorkingDay == eventStartTime)) {
               beginWorkingDay = eventStartTime;
 
 
@@ -252,11 +304,15 @@ function getWorkingTimeFromCalendar()
               afterHoursTime = 0;
 
 
-            // Is event on a weekend day?
+            // Is event on a weekend day or a holiday?
             // Assumption is that Start and Stop events don't occur on weekends
-            } else if (cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) {
-              // For weekend days, working time is just the time of the appointments
-              weekendWorkingTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
+            } else if ((cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) || (true == isHoliday)) {
+              // Is it an out event
+              if (cOut != eventTitle) {
+                // For weekend days, working time is just the time of the appointments
+                weekendWorkingTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
+
+              } // Is it an out event
 
 
             // Is the event a non-working event?
@@ -272,6 +328,13 @@ function getWorkingTimeFromCalendar()
                 beginWorkingDay = eventEndTime;
 
 
+              // Non-working event spans normal beginning of the work day
+              } else if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
+                // Non-working time starts before the start of the working day
+                // and ends after the start of the working day (like I slept in)
+                // so reset beginning of working day to end of the event
+                beginWorkingDay = eventEndTime;
+                
               // Non-working event during the working day?
               } else if ((eventStartTime < endWorkingDay) && (eventEndTime < endWorkingDay)) {
                 // Non-working event start time falls within the working day (e.g., time for a personal event),
@@ -311,7 +374,7 @@ function getWorkingTimeFromCalendar()
               beginWorkingDay = eventStartTime - 1;
 
 
-              // Event spans beginning of working day
+            // Event spans beginning of working day
             } else if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
               // Event starts before the beginning of the working day AND
               // end of the event is after the beginning of the working day
@@ -382,7 +445,7 @@ function getWorkingTimeFromCalendar()
           // There were events during a day
 
           // Is this a weekend day?
-          if (cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) {
+          if ((cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) || (true == isHoliday)) {
             // It's a weekend day, so working time is only after hours time
             workingTime = weekendWorkingTime;
 
@@ -412,8 +475,10 @@ function getWorkingTimeFromCalendar()
       workingTime = 0;
       nonWorkingTime = 0;
       eventIndex = 0;
+      beforeHoursTime = 0;
       afterHoursTime = 0;
       weekendWorkingTime = 0;
+      isHoliday = false;
       ++dayOffset;
 
     } // Loop through days of week
