@@ -1,4 +1,4 @@
-// Copyright 2020 Ginkgo Bioworks
+// Copyright 2020, 2021 Ginkgo Bioworks
 // SPDX-License-Identifier: BSD-3-Clause
 // https://opensource.org/licenses/BSD-3-Clause
 
@@ -57,10 +57,17 @@ To do:
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
 //
+// Version: 0.13
+// Date: 2021/03/06
+// - Updated the copyright
+// - Addressed case where non-working event starts before end of normal working day
+//   and ends at end of normal working day
+//
+//
 // Version: 0.12
 // Date: 2020/09/17
-//   - Added ability to handle events that start before the start of the work day,
-//      and the end after the start of the work day, e.g., I slept in
+// - Added ability to handle events that start before the start of the work day,
+//   and the end after the start of the work day, e.g., I slept in
 //
 //
 // Version: 0.11
@@ -342,8 +349,8 @@ function getWorkingTimeFromCalendar()
                 nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
 
 
-              // Non-working event spans the end of the working day
-              } else if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
+              // Non-working event is at or spans the end of the working day
+              } else if ((eventStartTime < endWorkingDay) && (eventEndTime >= endWorkingDay)) {
                // Non-working event begins before the end of the working day and the event
                // ends after the working day ends, then reset the end of the working day
                // to the beginning of the event
