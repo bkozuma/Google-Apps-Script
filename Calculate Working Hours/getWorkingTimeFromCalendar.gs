@@ -1,4 +1,4 @@
-// Copyright 2020, 2021 Ginkgo Bioworks
+// Copyright 2020, 2021, 2022 Ginkgo Bioworks
 // SPDX-License-Identifier: BSD-3-Clause
 // https://opensource.org/licenses/BSD-3-Clause
 
@@ -50,12 +50,36 @@
 *
 *
 To do:
+// - To do: Handle events for which I am the owner and then I turn down
+//          https://stackoverflow.com/questions/41504049/how-to-test-if-the-owner-of-a-calendar-event-declined-it
 // - To do: Handle non-working days that are not on weekends
+// - To do: Handle overlapping working events that are on non-working days
 *
 */
 //
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
+//
+// Version: 0.17
+// Date: 2022/03/07
+// - Updated copyright
+//
+//
+// Version: 0.16
+// Date: 2021/10/23
+// - Added 'Transit to Drydock' and 'Transit to Wilson Rd' as non-working events
+//
+//
+// Version: 0.15
+// Date: 2021/10/05
+// - Added ability to count tentatively accepted events
+//
+//
+// Version: 0.14
+// Date: 2021/07/03
+// - Adjusted how Out events are handled, they can now just start with Out,
+//   the event title does not have to only be "Out"
+//
 //
 // Version: 0.13
 // Date: 2021/03/06
@@ -214,7 +238,7 @@ function getWorkingTimeFromCalendar()
   let afterHoursTime = 0;
   // Potentially get non-working time values from a separate Sheet?
   const cOut = 'Out';
-  const cNonWorkingTime = [ 'OoO', cOut, 'Out of office', 'Transit'];
+  const cNonWorkingTime = [ 'OoO', cOut, 'Out of office', 'Transit', 'Transit to Drydock', 'Transit to Wilson Rd'];
   const cStartEvent = 'Start';
   const cStopEvent = 'Stop';
   const cNotFound = -1;
@@ -275,16 +299,19 @@ function getWorkingTimeFromCalendar()
 
 
           // Is it a holiday or work on a day off?
-          if ((-1 != eventTitle.indexOf(cHoliday)) || (isAllDayEvent && (cOut == eventTitle))) {
+          if ((-1 != eventTitle.indexOf(cHoliday)) || 
+              (isAllDayEvent && (true == eventTitle.startsWith(cOut)))) {
             isHoliday = true;
 
           } // Is it a holiday or work on a day off?
 
           
-          // Skip the event if it is an all day event or was not accepted
+          // Skip the event if it is an all day event or was not accepted, was not a maybe, or doesn't own it
           // https://stackoverflow.com/questions/44102840/google-apps-script-for-calendar-searchfilter
           if ((!isAllDayEvent) &&
-              ((CalendarApp.GuestStatus.YES == wasEventAccepted) || (CalendarApp.GuestStatus.OWNER == wasEventAccepted))) {
+              ((CalendarApp.GuestStatus.YES == wasEventAccepted) || 
+              (CalendarApp.GuestStatus.MAYBE == wasEventAccepted) ||
+              (CalendarApp.GuestStatus.OWNER == wasEventAccepted))) {
 
 
             // Get the title of the event, and the start and end time
@@ -315,8 +342,9 @@ function getWorkingTimeFromCalendar()
             // Assumption is that Start and Stop events don't occur on weekends
             } else if ((cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) || (true == isHoliday)) {
               // Is it an out event
-              if (cOut != eventTitle) {
+              if (false == eventTitle.startsWith(cOut)) {
                 // For weekend days, working time is just the time of the appointments
+                // BUG: Double counts overlapping working events on non-work days
                 weekendWorkingTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
 
               } // Is it an out event
@@ -410,6 +438,7 @@ function getWorkingTimeFromCalendar()
               // and the default start of the day hasn't been changed
               // so reset start of working day to beginning of the event
               // i.e., I started work after the default time
+              // THERE IS A BUG
               beginWorkingDay = eventStartTime;
 
 
