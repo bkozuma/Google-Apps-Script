@@ -1,4 +1,4 @@
-// Copyright 2020 Ginkgo Bioworks
+// Copyright 2020, 2021, 2022 Ginkgo Bioworks
 // SPDX-License-Identifier: BSD-3-Clause
 // https://opensource.org/licenses/BSD-3-Clause
 
@@ -11,7 +11,17 @@
 // Name: getCurrentDay
 // Author: Bruce Kozuma
 //
+// Version: 0.2
+// Date: 2022/03/07
+// - Updated copyright
+// - Set last day of the month to 28 in non-leap year Februarys
+//
+//
 // Version: 0.1
+// Date: 2021/01/03
+// - Account for current day in a new year
+//
+//
 // Date: 2020/03/29
 // - Initial release
 //
@@ -40,6 +50,7 @@ function getCurrentDay(pWeekStartingDate, pDayOffset) {
   } else if (1 == currentMonth ) {
     // February, so account for leap year
     // https://www.timeanddate.com/date/leapyear.html
+    lastDayOfMonth = 28;
     let isLeapYear = false;
     if ((0 == year % 4) && ((0 == year % 100) || (0 == year % 400))) {
       // Yes, it's a leap year
@@ -54,6 +65,17 @@ function getCurrentDay(pWeekStartingDate, pDayOffset) {
   if (currentDate + pDayOffset > lastDayOfMonth) {
     // Advance the month as well as the day
     currentMonth += 2;
+
+
+    // Is currentMonth in a new year, i.e., greater than 12?
+    if (12 < currentMonth) {
+      // In a new year, so set month to 1 and increment year
+      currentMonth = 1;
+      ++year;
+
+    } // Is currentMonth in a new year, i.e., greater than 12?
+
+    // Next date is in a new month, but not a new year
     currentDate += pDayOffset - lastDayOfMonth;
 
   } else {
