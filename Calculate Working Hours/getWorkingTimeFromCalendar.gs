@@ -42,6 +42,7 @@
 * - Edge cases not handled by this code
 *   - Working time on holidays
 *   - Time spent working before or after normal working hours not in a gap between events
+* - Now finds time for Project Diamond
 *
 * Reference: https://towardsdatascience.com/creating-calendar-events-using-google-sheets-data-with-appscript-203b26446ce9
 *
@@ -59,6 +60,12 @@ To do:
 //
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
+//
+// Version: 0.18
+// Date: 2022/05/31
+// - Accounted for having to track time on Project Diamond, i.e., P317
+// - Set the returned precision to 2 digits
+//
 //
 // Version: 0.17
 // Date: 2022/03/07
@@ -232,6 +239,7 @@ function getWorkingTimeFromCalendar()
   let eventTitle = '';
   let eventStartTime = 0;
   let eventEndTime = 0;
+  let eventDescription = '';
   let workingTime = 0;
   let nonWorkingTime = 0;
   let beforeHoursTime = 0;
@@ -247,6 +255,10 @@ function getWorkingTimeFromCalendar()
   let weekendWorkingTime = 0;
   let isHoliday = false;
   const cHoliday = 'Holiday';
+  const cP317 = 'P317';
+  const cProjectDiamond = 'Diamond';
+  let foundProjectDiamondEvent = false;
+  let projectDiamondTime = 0;
   while ('' != weekStarting) {
 
     // Has week been submitted
@@ -318,7 +330,20 @@ function getWorkingTimeFromCalendar()
             eventTitle = dayEvents[eventIndex].getTitle();
             eventStartTime = new Date(dayEvents[eventIndex].getStartTime());
             eventEndTime = new Date(dayEvents[eventIndex].getEndTime());
+            eventDescription = dayEvents[eventIndex].getDescription();
 
+
+            // Is event related to P317, i.e., Project Diamond?
+            // That is, found P317 or Diamond found in the title or description
+            let temp = eventTitle.indexOf(cProjectDiamond);
+            if ((cNotFound != eventTitle.indexOf(cProjectDiamond)) || 
+                (cNotFound != eventTitle.indexOf(cP317)) ||
+                (cNotFound != eventDescription.indexOf(cProjectDiamond)) ||
+                (cNotFound != eventDescription.indexOf(cP317))){
+              foundProjectDiamondEvent = true;
+              projectDiamondTime = ((eventEndTime - eventStartTime) / cMilisecondsPerHour);
+          
+            } // Is event related to P317, i.e., Project Diamond?
 
             // Is the event a Start event?
             // If it is, use the start time of the event to set the start of the working day
@@ -501,8 +526,30 @@ function getWorkingTimeFromCalendar()
         } // Calculate working hours
 
 
+        // Add content if found Project Diamond time for a day
+        // Add comment with the time
+        // Set cell background color to light green 3
+        // Subtract the Project Diamond time from the working time
+        if (true == foundProjectDiamondEvent) {
+          cSheet.getRange(range).setNote(cProjectDiamond + ': ' + projectDiamondTime);
+
+          cSheet.getRange(range).setBackgroundRGB(217,234,211);
+
+          workingTime -= projectDiamondTime;
+
+        } else {
+          // There's no Project Time time for the day, so delete any note (questionable)
+          // and clear any cell background color
+          cSheet.getRange(range).setBackgroundRGB(255, 255, 255);
+
+        } // Add content if found Project Diamond time for a day
+
+
         // Write result to sheet
+        // Set the precision to 2 digits
+        workingTime = workingTime.toPrecision(2);
         cSheet.getRange(range).setValue(workingTime);
+
 
       } // If cell is empty, calculate working time
 
@@ -515,6 +562,8 @@ function getWorkingTimeFromCalendar()
       afterHoursTime = 0;
       weekendWorkingTime = 0;
       isHoliday = false;
+      foundProjectDiamondEvent = false;
+      projectDiamondTime = 0;
       ++dayOffset;
 
     } // Loop through days of week
