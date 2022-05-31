@@ -61,6 +61,11 @@ To do:
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
 //
+// Version: 0.19
+// Date: 2022/05/31
+// - Write the accumulated weekly Project Diamond time to a column to ensure accurate total working hours
+//
+//
 // Version: 0.18
 // Date: 2022/05/31
 // - Accounted for having to track time on Project Diamond, i.e., P317
@@ -197,6 +202,7 @@ function getWorkingTimeFromCalendar()
   const cFriCol = 9;
   const cSatCol = 10;
   const cSunCol = 11;
+  const cProjectDiamondCol = 14;
   const cNumDaysInWeek = cSunCol - cMonCol + 1;
   const cWeekendDay = [cSatCol, cSunCol];
   let dayOffset = 0;
@@ -258,7 +264,8 @@ function getWorkingTimeFromCalendar()
   const cP317 = 'P317';
   const cProjectDiamond = 'Diamond';
   let foundProjectDiamondEvent = false;
-  let projectDiamondTime = 0;
+  let projectDiamondDayTime = 0;
+  let projectDiamondWeekTime = 0;
   while ('' != weekStarting) {
 
     // Has week been submitted
@@ -341,7 +348,7 @@ function getWorkingTimeFromCalendar()
                 (cNotFound != eventDescription.indexOf(cProjectDiamond)) ||
                 (cNotFound != eventDescription.indexOf(cP317))){
               foundProjectDiamondEvent = true;
-              projectDiamondTime = ((eventEndTime - eventStartTime) / cMilisecondsPerHour);
+              projectDiamondDayTime = ((eventEndTime - eventStartTime) / cMilisecondsPerHour);
           
             } // Is event related to P317, i.e., Project Diamond?
 
@@ -530,12 +537,15 @@ function getWorkingTimeFromCalendar()
         // Add comment with the time
         // Set cell background color to light green 3
         // Subtract the Project Diamond time from the working time
+        // Accumulate the weekly Project Diamond time
         if (true == foundProjectDiamondEvent) {
-          cSheet.getRange(range).setNote(cProjectDiamond + ': ' + projectDiamondTime);
+          cSheet.getRange(range).setNote(cProjectDiamond + ': ' + projectDiamondDayTime);
 
           cSheet.getRange(range).setBackgroundRGB(217,234,211);
 
-          workingTime -= projectDiamondTime;
+          workingTime -= projectDiamondDayTime;
+
+          projectDiamondWeekTime += projectDiamondDayTime;
 
         } else {
           // There's no Project Time time for the day, so delete any note (questionable)
@@ -563,10 +573,20 @@ function getWorkingTimeFromCalendar()
       weekendWorkingTime = 0;
       isHoliday = false;
       foundProjectDiamondEvent = false;
-      projectDiamondTime = 0;
+      projectDiamondDayTime = 0;
       ++dayOffset;
 
     } // Loop through days of week
+
+
+    // Write the Project Diamond weekly time if there is any
+    if (projectDiamondWeekTime > 0) {
+      cSheet.getRange('R' + currentRow + 'C' + cProjectDiamondCol).setValue(projectDiamondWeekTime);
+
+      // Reset the Project Diamond week time to zero since starting a new week
+      projectDiamondWeekTime = 0;
+
+    } // Add content if found Project Diamond time for a day
 
 
     // Prepare for the next row
