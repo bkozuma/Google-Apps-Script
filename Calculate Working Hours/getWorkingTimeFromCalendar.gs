@@ -61,6 +61,38 @@ To do:
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
 //
+// Version: 0.25
+// Date: 2022/12/02
+// - Fix bug where Sunday time calculated as negative
+//
+//
+// Version: 0.24
+// Date: 2022/10/23
+// - Account for events that span days
+// - Adjust for P # projects
+//
+//
+// Version: 0.23
+// Date: 2022/08/12
+// - Set the precision of Project Diamond time to 2 digits
+//
+//
+// Version: 0.22
+// Date: 2022/08/03
+// - Included P-Diamond as a search term for P317
+//
+//
+// Version: 0.21
+// Date: 2022/06/21
+// - Account for addition of tags column per row
+// - Corrected returned precision to 2 digits, was 1 actually
+//
+//
+// Version: 0.20
+// Date: 2022/05/31
+// - Included Bayer as a search term for P317
+//
+//
 // Version: 0.19
 // Date: 2022/05/31
 // - Write the accumulated weekly Project Diamond time to a column to ensure accurate total working hours
@@ -202,14 +234,14 @@ function getWorkingTimeFromCalendar()
   const cFriCol = 9;
   const cSatCol = 10;
   const cSunCol = 11;
-  const cProjectDiamondCol = 14;
+  const cRowTagStartCol = 14;
   const cNumDaysInWeek = cSunCol - cMonCol + 1;
   const cWeekendDay = [cSatCol, cSunCol];
   let dayOffset = 0;
   let currentDay = '';
 
 
-  // This offset needs to be 3 to account for the difference between the day offset
+  // This offset needs to account for the difference between the day offset
   // and the position of the Saturday column
   const cWeekendDayOffset = 5;
 
@@ -243,8 +275,12 @@ function getWorkingTimeFromCalendar()
   let endWorkingDay = 0;
   let eventIndex = 0;
   let eventTitle = '';
-  let eventStartTime = 0;
-  let eventEndTime = 0;
+  let eventMidnight = new Date();
+  let eventYear = new Date();
+  let eventMonth = new Date();
+  let eventDay = new Date();
+  let eventStartTime = new Date();
+  let eventEndTime = new Date();
   let eventDescription = '';
   let workingTime = 0;
   let nonWorkingTime = 0;
@@ -261,11 +297,54 @@ function getWorkingTimeFromCalendar()
   let weekendWorkingTime = 0;
   let isHoliday = false;
   const cHoliday = 'Holiday';
-  const cP317 = 'P317';
-  const cProjectDiamond = 'Diamond';
   let foundProjectDiamondEvent = false;
   let projectDiamondDayTime = 0;
   let projectDiamondWeekTime = 0;
+
+
+  // P317 Diamond
+  const cP317 = 'P317';
+  const cProjectDiamond = 'Diamond';
+  const cBayer = 'Bayer';
+
+
+  // P # Project numbers
+  const cPCode = ['Diamond', 'Pepper', 'Adapt', 'Cepheus' ];
+  const cPNumber = ['P317', 'P337', 'P358', 'P359' ];
+  const cPName = ['Bayer', 'Zymergen', 'Altar', 'Circularis' ];
+
+
+  // Get the sheet name
+  let sheetName = '';
+  sheetName = cSheet.getSheetName();
+  let projectIndex = -1;
+  if (sheetName == cPCode[ 0 ]) {
+    // Project Diamond
+    projectIndex = 0;
+
+  } else if (sheetName == cPCode[ 1 ]) {
+    // Project Pepper
+    projectIndex = 1;
+
+  } else if (sheetName == cPCode[ 2 ]) {
+    // Project Adapt
+    projectIndex = 2;
+
+  } else if (sheetName == cPCode[ 3 ]) {
+    // Project Cepheus
+    projectIndex = 3;
+
+  } else {
+    // Check if on a Project sheet
+    if (-1 == projectIndex) {
+      
+
+    } // Check if on a Project sheet
+
+  } // Get the sheet name
+
+
+  // Process weeks
   while ('' != weekStarting) {
 
     // Has week been submitted
@@ -340,17 +419,37 @@ function getWorkingTimeFromCalendar()
             eventDescription = dayEvents[eventIndex].getDescription();
 
 
+            // Handle event that started the previous day
+            eventYear = eventEndTime.getFullYear();
+            eventMonth = eventEndTime.getMonth();
+            eventDay = eventEndTime.getDate();
+            eventMidnight.setFullYear(eventYear);
+            eventMidnight.setMonth(eventMonth);
+            eventMidnight.setDate(eventDay);
+            eventMidnight.setHours(0);
+            eventMidnight.setMinutes(0);
+            eventMidnight.setSeconds(0);
+            if (eventStartTime < eventMidnight) {
+              // Event starts on the previous day, so set event start time to midnight
+              // so we don't over count hours
+              eventStartTime = eventMidnight;
+
+            } // Handle event that started the previous day
+
+
             // Is event related to P317, i.e., Project Diamond?
             // That is, found P317 or Diamond found in the title or description
-            let temp = eventTitle.indexOf(cProjectDiamond);
-            if ((cNotFound != eventTitle.indexOf(cProjectDiamond)) || 
-                (cNotFound != eventTitle.indexOf(cP317)) ||
-                (cNotFound != eventDescription.indexOf(cProjectDiamond)) ||
-                (cNotFound != eventDescription.indexOf(cP317))){
+            if ((cNotFound != eventTitle.indexOf(cPCode[0])) || 
+                (cNotFound != eventTitle.indexOf(cPNumber[0])) ||
+                (cNotFound != eventTitle.indexOf(cPName[0])) ||
+                (cNotFound != eventDescription.indexOf(cPCode[0])) ||
+                (cNotFound != eventDescription.indexOf(cPNumber[0])) ||
+                (cNotFound != eventDescription.indexOf(cPName[0]))){
               foundProjectDiamondEvent = true;
-              projectDiamondDayTime = ((eventEndTime - eventStartTime) / cMilisecondsPerHour);
+              projectDiamondDayTime += ((eventEndTime - eventStartTime) / cMilisecondsPerHour);
           
             } // Is event related to P317, i.e., Project Diamond?
+
 
             // Is the event a Start event?
             // If it is, use the start time of the event to set the start of the working day
@@ -539,7 +638,8 @@ function getWorkingTimeFromCalendar()
         // Subtract the Project Diamond time from the working time
         // Accumulate the weekly Project Diamond time
         if (true == foundProjectDiamondEvent) {
-          cSheet.getRange(range).setNote(cProjectDiamond + ': ' + projectDiamondDayTime);
+          // Set the precision to 2 digits
+          cSheet.getRange(range).setNote(cProjectDiamond + ': ' +  projectDiamondDayTime.toPrecision(3));
 
           cSheet.getRange(range).setBackgroundRGB(217,234,211);
 
@@ -557,8 +657,7 @@ function getWorkingTimeFromCalendar()
 
         // Write result to sheet
         // Set the precision to 2 digits
-        workingTime = workingTime.toPrecision(2);
-        cSheet.getRange(range).setValue(workingTime);
+        cSheet.getRange(range).setValue(workingTime.toPrecision(3));
 
 
       } // If cell is empty, calculate working time
@@ -579,9 +678,9 @@ function getWorkingTimeFromCalendar()
     } // Loop through days of week
 
 
-    // Write the Project Diamond weekly time if there is any
+    // Sum the Project Diamond weekly time if there is any
     if (projectDiamondWeekTime > 0) {
-      cSheet.getRange('R' + currentRow + 'C' + cProjectDiamondCol).setValue(projectDiamondWeekTime);
+      cSheet.getRange('R' + currentRow + 'C' + cRowTagStartCol).setValue(projectDiamondWeekTime.toPrecision(3));
 
       // Reset the Project Diamond week time to zero since starting a new week
       projectDiamondWeekTime = 0;
