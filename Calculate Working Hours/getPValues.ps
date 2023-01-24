@@ -1,0 +1,57 @@
+/**
+* Gets the P values from the 2023 Ginkgo Hours Tracking Google Sheet
+*
+* @param {pSpreadsheetApp, pValuesSheetName} Spreadsheet app, name of the sheet with values
+* @return {pValues}
+* PValues[PValueIndex] = [ PNumber, PCodename, POther ];
+*/
+//
+// Name: getPValues
+// Author: Bruce Kozuma
+//
+//
+// Version: 0.1
+// Date: 2023/01/24
+// - Initial release
+//
+//
+function getPValues(pSpreadsheetApp, pValuesSheetName) {
+  // Get pValues
+  let cValuesSheet = pSpreadsheetApp.getSheetByName(pValuesSheetName);
+  let cPValueStartRow = 3;
+  let cPNumberCol = 1;
+  let cPCodenameCol = 2;
+  let cPOtherCol = 3;
+  let PValueIndex = 0;
+  let PValues = new Array();
+  let PValueRange = 'R' +  (cPValueStartRow + PValueIndex) + 'C' + cPNumberCol;
+  let PNumber = cValuesSheet.getRange(PValueRange).getValue();
+  let PCodename = '';
+  let POther = '';
+  while ('' != PNumber) {
+    // There's a P Number, so get the other values
+
+    // Get Project codename
+    PValueRange = 'R' +  (cPValueStartRow + PValueIndex) + 'C' + cPCodenameCol;
+    PCodename = cValuesSheet.getRange(PValueRange).getValue();
+    
+    // Get other string about the Project, e.g., customer
+    PValueRange = 'R' +  (cPValueStartRow + PValueIndex) + 'C' + cPOtherCol;
+    POther = cValuesSheet.getRange(PValueRange).getValue();
+
+    // Add the values to the array
+    PValues[PValueIndex] = [ PNumber, PCodename, POther ];
+
+
+    // Prepare for next loop
+    PValueIndex++;
+    PValueRange = 'R' +  (cPValueStartRow + PValueIndex) + 'C' + cPNumberCol;
+    PNumber = cValuesSheet.getRange(PValueRange).getValue();
+    PCodename = '';
+    POther = '';
+
+  } // Get pValues
+
+  return PValues;
+
+} // function getPValues
