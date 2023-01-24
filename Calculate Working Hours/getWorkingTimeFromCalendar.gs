@@ -1,4 +1,4 @@
-// Copyright 2020, 2021, 2022 Ginkgo Bioworks
+// Copyright 2020, 2021, 2022, 2023 Ginkgo Bioworks
 // SPDX-License-Identifier: BSD-3-Clause
 // https://opensource.org/licenses/BSD-3-Clause
 
@@ -53,13 +53,24 @@
 To do:
 // - To do: Handle events for which I am the owner and then I turn down
 //          https://stackoverflow.com/questions/41504049/how-to-test-if-the-owner-of-a-calendar-event-declined-it
-// - To do: Handle non-working days that are not on weekends
-// - To do: Handle overlapping working events that are on non-working days
+// - To do: Handle overlapping working events
 *
 */
 //
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
+//
+// Version: 0.27
+// Date: 2023/01/24
+// - Revamp how P # Project time is calculated
+// - Time on P # Projects is calculated solely by event time, NOT by general working time
+// - Removing Start and Stop event handling
+//
+//
+// Version: 0.26
+// Date: 2022/12/31
+// - Updated copyright for 2023
+//
 //
 // Version: 0.25
 // Date: 2022/12/02
@@ -202,6 +213,9 @@ To do:
 //
 function getWorkingTimeFromCalendar()
 {
+  let eventTitle = '';
+
+
   // Just avoiding silly pitfalls
   "use strict";
 
@@ -228,13 +242,8 @@ function getWorkingTimeFromCalendar()
   const cSubmittedCol = 3;
   let hasBeenSubmitted = '';
   const cMonCol = 5;
-  const cTueCol = 6;
-  const cWedCol = 7;
-  const cThuCol = 8;
-  const cFriCol = 9;
   const cSatCol = 10;
   const cSunCol = 11;
-  const cRowTagStartCol = 14;
   const cNumDaysInWeek = cSunCol - cMonCol + 1;
   const cWeekendDay = [cSatCol, cSunCol];
   let dayOffset = 0;
@@ -247,6 +256,7 @@ function getWorkingTimeFromCalendar()
 
 
   // End of working day in miliseconds from 00:00
+  // Get from Google Calendar? When there is an API call for it
   const cMilisecondsPerHour = 1000*60*60;
   const cWorkingDayBegins = '07:15';
   const cWorkingDayEnds = '17:00';
@@ -257,7 +267,7 @@ function getWorkingTimeFromCalendar()
 
 
   // Header row
-  const cHeaderRow = 1;
+  const cHeaderRow = 2;
   let currentRow = cHeaderRow + 1;
 
 
@@ -268,80 +278,84 @@ function getWorkingTimeFromCalendar()
   let eventData = cSheet.getRange(range).getValues();
   weekStarting = eventData[0][cWeekStartingCol - 1];
   weekEnding = eventData[0][cWeekEndingCol - 1];
+
+
+  // Set up a bunch of other variables
   let dayEvents = {};
   let numDayEvents = 0;
   let beginWorkingDay = 0;
   let defaultBeginWorkingDay = 0;
   let endWorkingDay = 0;
+  let beginCurrentDay = new Date();
+  let endCurrentDay = new Date();
   let eventIndex = 0;
-  let eventTitle = '';
+//  let eventTitle = '';
   let eventMidnight = new Date();
   let eventYear = new Date();
   let eventMonth = new Date();
   let eventDay = new Date();
   let eventStartTime = new Date();
   let eventEndTime = new Date();
-  let eventDescription = '';
   let workingTime = 0;
   let nonWorkingTime = 0;
   let beforeHoursTime = 0;
   let afterHoursTime = 0;
+
+
   // Potentially get non-working time values from a separate Sheet?
   const cOut = 'Out';
   const cNonWorkingTime = [ 'OoO', cOut, 'Out of office', 'Transit', 'Transit to Drydock', 'Transit to Wilson Rd'];
-  const cStartEvent = 'Start';
-  const cStopEvent = 'Stop';
   const cNotFound = -1;
   let isAllDayEvent = false;
   let wasEventAccepted = false;
   let weekendWorkingTime = 0;
+  let isWeekendDay = false;
   let isHoliday = false;
   const cHoliday = 'Holiday';
-  let foundProjectDiamondEvent = false;
-  let projectDiamondDayTime = 0;
-  let projectDiamondWeekTime = 0;
 
 
-  // P317 Diamond
-  const cP317 = 'P317';
-  const cProjectDiamond = 'Diamond';
-  const cBayer = 'Bayer';
-
-
-  // P # Project numbers
-  const cPCode = ['Diamond', 'Pepper', 'Adapt', 'Cepheus' ];
-  const cPNumber = ['P317', 'P337', 'P358', 'P359' ];
-  const cPName = ['Bayer', 'Zymergen', 'Altar', 'Circularis' ];
-
-
-  // Get the sheet name
+  // Get current sheet name
   let sheetName = '';
   sheetName = cSheet.getSheetName();
-  let projectIndex = -1;
-  if (sheetName == cPCode[ 0 ]) {
-    // Project Diamond
-    projectIndex = 0;
 
-  } else if (sheetName == cPCode[ 1 ]) {
-    // Project Pepper
-    projectIndex = 1;
 
-  } else if (sheetName == cPCode[ 2 ]) {
-    // Project Adapt
-    projectIndex = 2;
+  // Get reserved sheetnames
+  const cValuesSheetName = 'Values';
+  let reservedSheetNames = new Array();
+  reservedSheetNames = getReservedSheetNames(cSs, cValuesSheetName);
 
-  } else if (sheetName == cPCode[ 3 ]) {
-    // Project Cepheus
-    projectIndex = 3;
 
-  } else {
-    // Check if on a Project sheet
-    if (-1 == projectIndex) {
-      
+  // Check if active sheet is a reserved sheet
+  let reservedSheetName = '';
+  for (reservedSheetName of reservedSheetNames) {
 
-    } // Check if on a Project sheet
+    // Is the active sheet a reserved sheet?
+    if (sheetName == reservedSheetName) {
+      // Yup, active sheet is a reserved one, warn and exit
+      cUI.alert('Sheet ' + sheetName + ' is not intended for this function; function will terminate.',cUI.ButtonSet.OK)
+      return;
 
-  } // Get the sheet name
+    } // Is the active sheet a reserved sheet?
+
+  } // Check if active sheet is a reserved sheet
+
+
+  // Get P values
+  // P Number and P Code are required
+  // P Other is optional
+  let PValues = new Array ();
+  PValues = getPValues(cSs, cValuesSheetName);
+  let currentSheetIsPValueSheet = false;
+  let PValueFound = false;
+
+
+  // Is current sheet a P Value sheet?
+  if (true == searchPValues(PValues, sheetName, sheetName)) {
+    // Yup, on a P Value sheet
+    currentSheetIsPValueSheet = true;
+
+  } // Is current sheet a P Value sheet?
+  let currentSheetPValueDayHours = 0;
 
 
   // Process weeks
@@ -353,15 +367,27 @@ function getWorkingTimeFromCalendar()
       // Week has NOT been submitted
       ++numWeeksProcessed;
 
+    } else {
+      // Week has been submitted, so skip week
+      hasBeenSubmitted = '';
+      ++currentRow;
+      range = 'R' +  currentRow + 'C' + cWeekStartingCol + ':' + 'R' + currentRow + 'C' + cSunCol;
+      eventData = cSheet.getRange(range).getValues();
+      weekStarting = eventData[0][cWeekStartingCol - 1];
+      weekEnding = eventData[0][cWeekEndingCol - 1];
+      dayOffset = 0;
+      currentSheetPValueDayHours = 0;
+      continue;
+
     } // Has week been submitted
 
 
     // Get data for Monday (same as week starting) then loop through days of week
-    while ((dayOffset < cNumDaysInWeek) && ('' == hasBeenSubmitted)) {
+    while (dayOffset < cNumDaysInWeek) {
 
       // If cell is empty, calculate working time
       range = 'R' + currentRow + 'C' + (cMonCol + dayOffset);
-      if ('' == cSheet.getRange(range).getValue()) {
+      if (true == cSheet.getRange(range).isBlank()) {
         // Cell is empty, so calculate day's hours
 
 
@@ -371,8 +397,17 @@ function getWorkingTimeFromCalendar()
 
         // Set default beginning and ending of the day
         beginWorkingDay = new Date(currentDay + ' ' + cWorkingDayBegins);
-        defaultBeginWorkingDay = beginWorkingDay;
+        defaultBeginWorkingDay = new Date(beginWorkingDay.getTime());
+        beginCurrentDay = new Date(beginWorkingDay.getTime());
+        beginCurrentDay.setHours(0);
+        beginCurrentDay.setMinutes(0);
+        beginCurrentDay.setSeconds(0);
+
         endWorkingDay = new Date(currentDay + ' ' + cWorkingDayEnds);
+        endCurrentDay = new Date(endWorkingDay.getTime());
+        endCurrentDay.setHours(23);
+        endCurrentDay.setMinutes(59);
+        endCurrentDay.setSeconds(59);
 
 
         // Get the events for the day
@@ -382,108 +417,163 @@ function getWorkingTimeFromCalendar()
         // Loop through day events
         numDayEvents = dayEvents.length;
         while (numDayEvents > eventIndex) {
-          // Is the event an All Day event?
-          isAllDayEvent = dayEvents[eventIndex].isAllDayEvent();
-
-
           // Get the title of the event, and the start and end time
           eventTitle = dayEvents[eventIndex].getTitle();
           eventStartTime = new Date(dayEvents[eventIndex].getStartTime());
           eventEndTime = new Date(dayEvents[eventIndex].getEndTime());
 
 
-          // Was the event accepted?
-          wasEventAccepted = dayEvents[eventIndex].getMyStatus();
+          // Is the event an All Day event?
+          isAllDayEvent = dayEvents[eventIndex].isAllDayEvent();
 
 
           // Is it a holiday or work on a day off?
-          if ((-1 != eventTitle.indexOf(cHoliday)) || 
+          if ((cNotFound != eventTitle.indexOf(cHoliday)) ||
               (isAllDayEvent && (true == eventTitle.startsWith(cOut)))) {
             isHoliday = true;
 
           } // Is it a holiday or work on a day off?
 
-          
-          // Skip the event if it is an all day event or was not accepted, was not a maybe, or doesn't own it
+
+          // Skip if event is an All Day event
+          if (true == isAllDayEvent) {
+            // Yup, all day event, skip it
+            ++eventIndex;
+            continue;
+
+          } // Skip if event is an All Day event
+
+
+          // Was the event accepted?
+          wasEventAccepted = dayEvents[eventIndex].getMyStatus();
+
+
+          // Was event accepted as a Yes or a Maybe and I don't own the meeting
           // https://stackoverflow.com/questions/44102840/google-apps-script-for-calendar-searchfilter
-          if ((!isAllDayEvent) &&
-              ((CalendarApp.GuestStatus.YES == wasEventAccepted) || 
-              (CalendarApp.GuestStatus.MAYBE == wasEventAccepted) ||
-              (CalendarApp.GuestStatus.OWNER == wasEventAccepted))) {
+          // https://developers.google.com/apps-script/reference/calendar/guest-status
+            if ((CalendarApp.GuestStatus.NO == wasEventAccepted) ||
+              (CalendarApp.GuestStatus.INVITED == wasEventAccepted)) { 
+              // Event can be skipped since it wasn't accepted as Yes or Maybe
+              // Events to which I've been invited but to which I've declined are listed as OWNER
+              ++eventIndex;
+              continue;
+
+          } // Was event accepted as a Yes or a Maybe and I don't own the meeting
 
 
-            // Get the title of the event, and the start and end time
-            eventTitle = dayEvents[eventIndex].getTitle();
-            eventStartTime = new Date(dayEvents[eventIndex].getStartTime());
-            eventEndTime = new Date(dayEvents[eventIndex].getEndTime());
-            eventDescription = dayEvents[eventIndex].getDescription();
+          // Check for modifications to the start or end of the day
+          // Handle event that started the previous day
+          eventYear = eventEndTime.getFullYear();
+          eventMonth = eventEndTime.getMonth();
+          eventDay = eventEndTime.getDate();
+          eventMidnight.setFullYear(eventYear);
+          eventMidnight.setMonth(eventMonth);
+          eventMidnight.setDate(eventDay);
+          eventMidnight.setHours(0);
+          eventMidnight.setMinutes(0);
+          eventMidnight.setSeconds(0);
+          if (eventStartTime < beginCurrentDay) {
+            // Event starts on the previous day, so set event start time to
+            // beginning of current day so we don't over count hours
+            eventStartTime = beginCurrentDay;
+            beginWorkingDay = eventStartTime;
+
+          } // Handle event that started the previous day
 
 
-            // Handle event that started the previous day
-            eventYear = eventEndTime.getFullYear();
-            eventMonth = eventEndTime.getMonth();
-            eventDay = eventEndTime.getDate();
-            eventMidnight.setFullYear(eventYear);
-            eventMidnight.setMonth(eventMonth);
-            eventMidnight.setDate(eventDay);
-            eventMidnight.setHours(0);
-            eventMidnight.setMinutes(0);
-            eventMidnight.setSeconds(0);
-            if (eventStartTime < eventMidnight) {
-              // Event starts on the previous day, so set event start time to midnight
-              // so we don't over count hours
-              eventStartTime = eventMidnight;
+          // Handle event that ends after the current day
+          if (eventEndTime > endCurrentDay) {
+            // Event ends after the current day, so set event end time to
+            // midnight of the current day so we don't over count hours
+            eventEndTime = endCurrentDay;
 
-            } // Handle event that started the previous day
+          } // Handle event that ends after the current day
 
 
-            // Is event related to P317, i.e., Project Diamond?
-            // That is, found P317 or Diamond found in the title or description
-            if ((cNotFound != eventTitle.indexOf(cPCode[0])) || 
-                (cNotFound != eventTitle.indexOf(cPNumber[0])) ||
-                (cNotFound != eventTitle.indexOf(cPName[0])) ||
-                (cNotFound != eventDescription.indexOf(cPCode[0])) ||
-                (cNotFound != eventDescription.indexOf(cPNumber[0])) ||
-                (cNotFound != eventDescription.indexOf(cPName[0]))){
-              foundProjectDiamondEvent = true;
-              projectDiamondDayTime += ((eventEndTime - eventStartTime) / cMilisecondsPerHour);
-          
-            } // Is event related to P317, i.e., Project Diamond?
+          // Is event related to a P value, e.g., P317, Diamond, Bayer?
+          //* @return {-1 == pItemToFind not found
+          // 0 == pItemToFind found and not for pSheetName,
+          // 1 == if pItemToFind found and for pSheetName}
+          PValueFound = searchPValues(PValues, eventTitle, sheetName);
+          switch(PValueFound) {
+            case cNotFound:
+              // Event title doesn't match a P value, so proceed
+              break;
+
+            case 0:
+              // Yup, found a P value in eventTitle and not the same as the current sheet name,
 
 
-            // Is the event a Start event?
-            // If it is, use the start time of the event to set the start of the working day
-            // If no Start event found, default start of working day time is used
-            if ((cStartEvent == eventTitle) && (beginWorkingDay == eventStartTime)) {
-              beginWorkingDay = eventStartTime;
+              // Does the event span start of the working day
+              if (eventEndTime < beginWorkingDay) {
+                // Non-working event occurs before the start of the working day,
+                // Do nothing
+
+              // Does event spans normal beginning of the work day?
+              } else if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
+                // Event spans beginning of the working day
+                // Set start of working day to end of event
+                beginWorkingDay == eventEndTime;
+
+              // Does the event span end of the working day
+              } else if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
+                // Event spans end of the working day, so set end of the working day to
+                // beginning of event
+                endWorkingDay == eventStartTime;
+
+              // Does the event start at the end of the working day?
+              } else if (eventStartTime - endWorkingDay == 0) {
+                // Event starts at end of working day
+                // Do nothing
+
+              // Does event start after the working day
+              } else if (eventStartTime > endWorkingDay) {
+                // Event starts after the working day
+                // Do nothing
+
+              } else {
+                // Event occurs during the working day so treat it like non-working time
+                nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
+
+              } // Is it after the end of the working day?
+
+              ++eventIndex;
+              continue;
+
+            case 1:
+              // Found a pValue same as the current sheet
+              currentSheetPValueDayHours += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
+              ++eventIndex;
+              continue;
+
+          } // Is event related to a P value, e.g., P317, Diamond, Bayer?
 
 
-            // Is the event a Stop event?
-            // If it is, use the start time of the event to set the end of the working day
-            // If no Stop event found, the default end of working day time is used
-            } else if (cStopEvent == eventTitle) {
-              endWorkingDay = eventStartTime;
+          // Is current day a weekend day?
+          if (cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) {
+            // It's a weekend day
+            isWeekendDay = true;
+
+          } // Is current day a weekend day?
 
 
-              // Also blank out after hours time since we set a new end of the working day
-              afterHoursTime = 0;
+          // Is event on a weekend day or a holiday?
+          if ((true == isWeekendDay) || (true == isHoliday)) {
+            // Event is on a weekend day or a holiday
 
 
-            // Is event on a weekend day or a holiday?
-            // Assumption is that Start and Stop events don't occur on weekends
-            } else if ((cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) || (true == isHoliday)) {
-              // Is it an out event
-              if (false == eventTitle.startsWith(cOut)) {
-                // For weekend days, working time is just the time of the appointments
-                // BUG: Double counts overlapping working events on non-work days
-                weekendWorkingTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
-
-              } // Is it an out event
+            // Is it an out event on a non-working day?
+            if (false == eventTitle.startsWith(cOut)) {
+              // An out event on a non-working day, so working time is just the time of the appointments
+              // Out events are ignored on weekend days, holidays
+              // BUG: Double counts overlapping working events on non-work days
+              weekendWorkingTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
 
 
             // Is the event a non-working event?
             } else if (cNotFound != cNonWorkingTime.indexOf(eventTitle)) {
-              // Event is a non-working event, so subtract time from the daily running total
+              // Event is a non-working event and not a P Value for the current sheet
+              // May subtract time from the daily running total
 
               // Is the end of the non-working event before the normal start of the work day?
               // This can happen when I commute to work and don't have meetings until Stand up,
@@ -493,117 +583,132 @@ function getWorkingTimeFromCalendar()
                 // so reset beginning of working day to end of the event
                 beginWorkingDay = eventEndTime;
 
+              } // Is the end of the non-working event before the normal start of the work day?
 
-              // Non-working event spans normal beginning of the work day
-              } else if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
+
+              // Does non-working event spans normal beginning of the work day?
+              if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
                 // Non-working time starts before the start of the working day
                 // and ends after the start of the working day (like I slept in)
                 // so reset beginning of working day to end of the event
                 beginWorkingDay = eventEndTime;
-                
+
+              } // Does non-working event spans normal beginning of the work day?
+
+
               // Non-working event during the working day?
-              } else if ((eventStartTime < endWorkingDay) && (eventEndTime < endWorkingDay)) {
+              if ((eventStartTime < endWorkingDay) && (eventEndTime < endWorkingDay)) {
                 // Non-working event start time falls within the working day (e.g., time for a personal event),
                 // so count the event duration as non-working time
                 nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
 
+              } // Non-working event during the working day?
 
-              // Non-working event is at or spans the end of the working day
-              } else if ((eventStartTime < endWorkingDay) && (eventEndTime >= endWorkingDay)) {
-               // Non-working event begins before the end of the working day and the event
-               // ends after the working day ends, then reset the end of the working day
-               // to the beginning of the event
-               // Events found after this one will be treated like working events after the
-               // end of the normal working day
-               endWorkingDay = eventStartTime;
 
-              } // Is the end of the non-working event after the normal start of the work day?
+              // Non-working event is at or spans the end of the working day?
+              if ((eventStartTime < endWorkingDay) && (eventEndTime >= endWorkingDay)) {
+                // Non-working event begins before the end of the working day and the event
+                // ends after the working day ends, then reset the end of the working day
+                // to the beginning of the event
+                // Events found after this one will be treated like working events after the
+                // end of the normal working day
+                endWorkingDay = eventStartTime;
+
+              } // Non-working event is at or spans the end of the working day?
 
 
               // If the non-working event is after the end of the working day, nothing needs to be done as
               // the event won't be included in the calculation for working time
 
-
-              // Not a non-working event, i.e., a working event
-              // Event ends before the working day?
-            } else if  (eventEndTime < beginWorkingDay) {
-              // End of the event is before beginning of working day,
-              // so add event duration to after hours time
-              beforeHoursTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
+            } // Is the event a non-working event and not a P Value event not for this sheet?
 
 
-            // Event ends at the beginning of the working day?
-            // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
-            } else if (0 == eventEndTime - beginWorkingDay) {
-              // Start and end of the event is before beginning of working day,
-              // so reset beginning of working day to start of event
-              beginWorkingDay = eventStartTime - 1;
+          // Not a non-working day, i.e., a work day
+          // Event ends before the working day?
+          } else if (eventEndTime < beginWorkingDay) {
+            // End of the event is before beginning of working day,
+            // so add event duration to after hours time
+            beforeHoursTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
 
 
-            // Event spans beginning of working day
-            } else if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
-              // Event starts before the beginning of the working day AND
-              // end of the event is after the beginning of the working day
-              // so set the beginning of the working day to the start of the event
-              beginWorkingDay = eventStartTime;
+          // Event ends at the beginning of the working day?
+          // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
+          } else if (0 == eventEndTime - beginWorkingDay) {
+            // Start and end of the event is before beginning of working day,
+            // so reset beginning of working day to start of event
+            beginWorkingDay = eventStartTime - 1;
 
 
-              // Event occurs after the beginning of working day and before the end of the working day
-              // Nothing needs to be done as the will be included in the calculation for working time
+          // Event spans beginning of working day
+          } else if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
+            // Event starts before the beginning of the working day AND
+            // end of the event is after the beginning of the working day
+            // so set the beginning of the working day to the start of the event
+            beginWorkingDay = eventStartTime;
 
 
-            // Event starts at the beginning working day
-            // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
-            } else if (eventStartTime - beginWorkingDay == 0) {
-              // Event starts at the beginning of the working day, either the default or
-              // another appointment with the same start time, so capture event and set the default
-              // working day to some nonsense value, which prevents the working day being set too late
-              // Useful in cases where I start work at the default time
-              defaultBeginWorkingDay = -1;
+            // Event occurs after the beginning of working day and before the end of the working day
+            // Nothing needs to be done as the will be included in the calculation for working time
 
 
-            // Event starts after the beginning of the workday and the default hasn't changed
-            // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
-            } else if ((eventStartTime > beginWorkingDay) && (0 == beginWorkingDay - defaultBeginWorkingDay)) {
+          // Event starts at the beginning working day
+          // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
+          } else if (eventStartTime - beginWorkingDay == 0) {
+            // Event starts at the beginning of the working day, either the default or
+            // another appointment with the same start time, so capture event and set the default
+            // working day to some nonsense value, which prevents the working day being set too late
+            // Useful in cases where I start work at the default time
+            defaultBeginWorkingDay = -1;
+
+
+          // Event starts after the beginning of the workday and the default hasn't changed
+          // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
+          } else if ((eventStartTime > beginWorkingDay) && (0 == beginWorkingDay - defaultBeginWorkingDay)) {
               // Start of event is after the default start of the working day
               // and the default start of the day hasn't been changed
+              // (i.e., there was another event even earlier than this one)
               // so reset start of working day to beginning of the event
               // i.e., I started work after the default time
-              // THERE IS A BUG
               beginWorkingDay = eventStartTime;
 
 
-            // Event spans end of the working day
-            } else if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
-              // Start of event is before the end of the working day and end of event is after
-              // end of working day, so reset end of working day to end of event
-              endWorkingDay = eventEndTime;
+          // Event spans end of the working day
+          } else if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
+            // Start of event is before the end of the working day and end of event is after
+            // end of working day, so reset end of working day to end of event
+            endWorkingDay = eventEndTime;
 
 
-            // Event starts at end the working day
-            // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
-            } else if (eventStartTime - endWorkingDay == 0) {
-              // Start of event is at the end of the working day
-              // so reset end of working day to end of event
-              endWorkingDay = eventEndTime;
+          // Event starts at end the working day
+          // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
+          } else if (eventStartTime - endWorkingDay == 0) {
+            // Start of event is at the end of the working day
+            // so reset end of working day to end of event
+            endWorkingDay = eventEndTime;
 
 
-            // Event starts after the end of the working day
-            } else if (eventStartTime > endWorkingDay) {
-              // Start of event is after the end of the working day so
-              // so add event duration to after hours time
-              afterHoursTime += (eventEndTime - eventStartTime) / cMilisecondsPerHour;
+          // Event starts after the end of the working day
+          } else if (eventStartTime > endWorkingDay) {
+            // Start of event is after the end of the working day so
+            // so add event duration to after hours time
+            afterHoursTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
 
-            } // Is the event a Start event?
+          } // Event starts after the end of the working day
 
-          } // Skip the event if it is an all day event
+
+          // Is it an out event not on a weekend or holiday?
+          if ((true == eventTitle.startsWith(cOut)) &&
+            ((true != isWeekendDay) || (true != isHoliday))) {
+            // It's an out event not on a weekend or holiday
+            nonWorkingTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
+
+          } // Is it an out event not on a weekend or holiday?
+
 
           // Check next event
-//cUI.alert('earliestEventStartTime: ' + earliestEventStartTime + "\n" +
-//         'latestEventEndTime: ' + latestEventEndTime);
           ++eventIndex;
 
-        } // Loop through events
+        } // Is event on a weekend day, a holiday, or a for a P Value that's not for the current sheet?
 
 
         // Calculate working hours
@@ -611,19 +716,30 @@ function getWorkingTimeFromCalendar()
         if (0 != numDayEvents) {
           // There were events during a day
 
-          // Is this a weekend day?
+
+          // Is this a weekend day or a holiday?
           if ((cNotFound != cWeekendDay.indexOf(dayOffset + cWeekendDayOffset)) || (true == isHoliday)) {
             // It's a weekend day, so working time is only after hours time
             workingTime = weekendWorkingTime;
 
           } else {
             // Not a weekend day, so working time includes after hours time
-            workingTime = ((endWorkingDay - beginWorkingDay) / cMilisecondsPerHour) + beforeHoursTime + afterHoursTime;
+            workingTime = (Math.abs((endWorkingDay - beginWorkingDay)) / cMilisecondsPerHour) + beforeHoursTime + afterHoursTime;
 
-            // Account for any non-working time
+
+            // Account for any non-working time, which includes P Value time not for this sheet
             workingTime -= nonWorkingTime;
 
-          } // Is this a weekend day?
+          } // Is this a weekend day or a holiday?
+
+
+          // Is current sheet a P Value sheet?
+          if (true == currentSheetIsPValueSheet) {
+            // Yup, so working time is P Value time for the sheet
+            // Don't care what the current value of workingTime is since this is a P Value sheet
+            workingTime = currentSheetPValueDayHours;
+
+          } // Is current sheet a P Value sheet?
 
         } else {
           // Empty day
@@ -632,60 +748,27 @@ function getWorkingTimeFromCalendar()
         } // Calculate working hours
 
 
-        // Add content if found Project Diamond time for a day
-        // Add comment with the time
-        // Set cell background color to light green 3
-        // Subtract the Project Diamond time from the working time
-        // Accumulate the weekly Project Diamond time
-        if (true == foundProjectDiamondEvent) {
-          // Set the precision to 2 digits
-          cSheet.getRange(range).setNote(cProjectDiamond + ': ' +  projectDiamondDayTime.toPrecision(3));
-
-          cSheet.getRange(range).setBackgroundRGB(217,234,211);
-
-          workingTime -= projectDiamondDayTime;
-
-          projectDiamondWeekTime += projectDiamondDayTime;
-
-        } else {
-          // There's no Project Time time for the day, so delete any note (questionable)
-          // and clear any cell background color
-          cSheet.getRange(range).setBackgroundRGB(255, 255, 255);
-
-        } // Add content if found Project Diamond time for a day
-
-
         // Write result to sheet
         // Set the precision to 2 digits
         cSheet.getRange(range).setValue(workingTime.toPrecision(3));
-
 
       } // If cell is empty, calculate working time
 
 
       // Prepare for next day
+      currentSheetPValueDayHours = 0;
+      currentSheetPValueTime = 0;
       workingTime = 0;
       nonWorkingTime = 0;
       eventIndex = 0;
       beforeHoursTime = 0;
       afterHoursTime = 0;
       weekendWorkingTime = 0;
+      isWeekendDay = false;
       isHoliday = false;
-      foundProjectDiamondEvent = false;
-      projectDiamondDayTime = 0;
       ++dayOffset;
 
-    } // Loop through days of week
-
-
-    // Sum the Project Diamond weekly time if there is any
-    if (projectDiamondWeekTime > 0) {
-      cSheet.getRange('R' + currentRow + 'C' + cRowTagStartCol).setValue(projectDiamondWeekTime.toPrecision(3));
-
-      // Reset the Project Diamond week time to zero since starting a new week
-      projectDiamondWeekTime = 0;
-
-    } // Add content if found Project Diamond time for a day
+    } // Get data for Monday (same as week starting) then loop through days of week
 
 
     // Prepare for the next row
@@ -696,7 +779,7 @@ function getWorkingTimeFromCalendar()
     weekEnding = eventData[0][cWeekEndingCol - 1];
     dayOffset = 0;
 
-  } // Get event data for a row
+  } // Process weeks
 
 
   // Finish up
