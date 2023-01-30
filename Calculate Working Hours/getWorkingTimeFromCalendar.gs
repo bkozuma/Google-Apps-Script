@@ -3,6 +3,7 @@
 // https://opensource.org/licenses/BSD-3-Clause
 
 /**
+01234567890123456789012345678901234567890123456789012345678901234567890123456789
 * Gathers work time from Google Calendar and puts into the a Google Sheet
 * Note: Javascript dates are calculated as miliseconds from January 1, 1970
 * Algorithm is to calculate working hours as follows:
@@ -11,38 +12,58 @@
 * - Events that are ignored
 *   - All day events
 *   - Non-accepted events
-*   - Non-working time (e.g., Transit, Out; there's a list)
+*   - Non-working time (e.g., Transit, Out)
+*     there's a list read from the Values sheet
 * - Usual working hours for a normal working day:
-*   - Default earliest event start time is 07:15
-*   - Default latest event end time is 17:00
+*   - Default earliest event start time, e.g., 07:15
+*     read from the Values sheet
+*   - Default latest event end time, e.g., 17:00
+*     read from the Values sheet
 * - Events before or after usual working hours
 *   - Working time is calculated as event end time - event start time
-*   - A running total of such working time per day is kept and added to normal working time
-* - Saturday and Sunday are not usual working days (there's a list)
+*   - A running total of such working time per day is kept and
+*     added to normal working time for a day
+* - Saturday and Sunday are not usual working days
+*   there's a list read from the Values sheet
 *   - Working time calculated like events before or after usual working hours
 * - Algorithm (accounts for gaps between events)
-*   - Scan the day's events for Start and Stop events
-*   - If found, set bounds of working day appropriately
-*   - If not found, use defaults
 *   - Assumption is that a day's events are sorted by time
-*   - For each non-working event, accumulate that time if the event is during working hours
-*   - If the end of the non-working event is before the start of the work day,
-      set the start of the work day to the end of the non-working event,
-      e.g., a Transit calendar entry where I arrive before 07:30
-*   - If the start of the non-working event is before the start of the work day,
-      and the end of the non-working event is after the start of the work day,
-      set the start of the work day to the end of the non-working event,
-      e.g., I slept in
-*   - If the non-working event is after the end of the working day, nothing needs to be done as
-      the event won't be included in the calculation for working time
-*   - For each working event, if the end of the event is after the stop time, event time is only day stop time - event start time
-*   - Working hours are calculated by day stop time - day start time - non-working time +
-*   - Work time outside of working hours is calculated by duration of the event and added to the total working time
-*   - Day working time is calculated by working hours + work time outside of working hours
-* - Edge cases not handled by this code
-*   - Working time on holidays
-*   - Time spent working before or after normal working hours not in a gap between events
-* - Now finds time for Project Diamond
+*   - Events that span the previous day are listed first
+*   - Non-working events:
+*     - Accumulate event time if the event is falls during working hours
+*     - If the end of non-working event is before start of working day,
+*       set the start of working day to end of non-working event,
+*       e.g., a Transit calendar entry where I arrive before 07:30
+*     - If the start of non-working event is before start of working day,
+*       and end of non-working event is after start of working day,
+*       set start of working day to the end of non-working event,
+*       e.g., I slept in
+*     - If non-working event is after end of the working day,
+*       nothing needs to be done as event won't be included in calculation
+*       for working time
+*   - Admin & Management working events:
+*     - If start of working event is before beginning of working day,
+*       treat as working time outside of working hours
+*     - If start of working event is same as the beginning of working day,
+*       extend start of working day to start of event
+*     - If start of working event is at end of working day,
+*       extend end of working day to end of event
+*     - If start of working event is after end of working day,
+*       treat as working time outside of working hours
+*     - Working hours are calculated as
+*       working day stop time -
+*       working day start time -
+*       non-working time +
+*       work time outside of working hours
+*   - Working time outside of working hours is calculated by duration of event
+*     and added to the total working time
+*   - Working time on weekends and holidays is calculated as sum of event times
+*   - P # Program events
+*     - There is a list of the P # sheets on the Values sheet
+*     - P # events not on corresponding P # sheet
+*       are not includeding in working time for that sheet
+*     - Working time for P # events on corresponding P # sheet is accumulated
+*       just from event time, i.e., same as working events outside working time
 *
 * Reference: https://towardsdatascience.com/creating-calendar-events-using-google-sheets-data-with-appscript-203b26446ce9
 *
@@ -54,11 +75,27 @@ To do:
 // - To do: Handle events for which I am the owner and then I turn down
 //          https://stackoverflow.com/questions/41504049/how-to-test-if-the-owner-of-a-calendar-event-declined-it
 // - To do: Handle overlapping working events
+// - To do: Get constants from a header file
+//          https://stackoverflow.com/questions/53359704/load-or-read-a-json-from-local-in-google-appscript
+//          https://www.w3schools.com/whatis/whatis_json.asp
+//          const jsonString = HtmlService.createHtmlOutputFromFile("my-json.html").getContent();
+//          const jsonObject = JSON.parse(jsonString);
 *
 */
 //
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
+//
+// Version: 0.28
+// Date: 2023/01/28
+// - Read default stop/stop times for days from the Values sheet
+// - Updated header comments
+//
+//
+// Version: 0.28
+// Date: 2023/01/24
+// - Adjusted to get indicators of non-working time
+//
 //
 // Version: 0.27
 // Date: 2023/01/24
@@ -255,13 +292,6 @@ function getWorkingTimeFromCalendar()
   const cWeekendDayOffset = 5;
 
 
-  // End of working day in miliseconds from 00:00
-  // Get from Google Calendar? When there is an API call for it
-  const cMilisecondsPerHour = 1000*60*60;
-  const cWorkingDayBegins = '07:15';
-  const cWorkingDayEnds = '17:00';
-
-
   // Track number of weeks handled
   let numWeeksProcessed = 0;
 
@@ -272,7 +302,7 @@ function getWorkingTimeFromCalendar()
 
 
   // Get event data for a row while Week starting isn't blank
-  // getValues returns a two dimentional array of the data in row column format
+  // getValues returns a two dimentional array in row column format
   // Since we're only getting one row at a time, the row is always [0]
   let range = 'R' +  currentRow + 'C' + cWeekStartingCol + ':' + 'R' + currentRow + 'C' + cSunCol;
   let eventData = cSheet.getRange(range).getValues();
@@ -302,9 +332,19 @@ function getWorkingTimeFromCalendar()
   let afterHoursTime = 0;
 
 
-  // Potentially get non-working time values from a separate Sheet?
+  // Get values from Values sheet
+  const cValuesSheetName = 'Values';
   const cOut = 'Out';
-  const cNonWorkingTime = [ 'OoO', cOut, 'Out of office', 'Transit', 'Transit to Drydock', 'Transit to Wilson Rd'];
+  const cNonWorkingTime = getNonWorkingTimeIndicators(cSs, cValuesSheetName);
+
+  // End of working day in miliseconds from 00:00
+  // Get from Google Calendar? When there is an API call for it
+  const cMilisecondsPerHour = 1000*60*60;
+  let defaultWorkingTimes = getDefaultWorkingTime(cSs, cValuesSheetName);
+  const cWorkingDayBegins = defaultWorkingTimes[0];
+  const cWorkingDayEnds = defaultWorkingTimes[1];
+
+
   const cNotFound = -1;
   let isAllDayEvent = false;
   let wasEventAccepted = false;
@@ -320,7 +360,6 @@ function getWorkingTimeFromCalendar()
 
 
   // Get reserved sheetnames
-  const cValuesSheetName = 'Values';
   let reservedSheetNames = new Array();
   reservedSheetNames = getReservedSheetNames(cSs, cValuesSheetName);
 
