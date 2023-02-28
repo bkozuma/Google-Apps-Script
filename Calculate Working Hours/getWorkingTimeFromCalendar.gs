@@ -72,9 +72,7 @@
 *
 *
 To do:
-// - To do: Handle events for which I am the owner and then I turn down
-//          https://stackoverflow.com/questions/41504049/how-to-test-if-the-owner-of-a-calendar-event-declined-it
-// - To do: Handle overlapping working events
+// - Figure out callback funtions, e.g., functions that iterate over an array
 // - To do: Get constants from a header file
 //          https://stackoverflow.com/questions/53359704/load-or-read-a-json-from-local-in-google-appscript
 //          https://www.w3schools.com/whatis/whatis_json.asp
@@ -86,7 +84,13 @@ To do:
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
 //
-// Version: 0.28
+// Version: 0.30
+// Date: 2023/02/28
+// - Handle events that I own but declined
+// - Fixed version history (there were two 0.28)
+//
+//
+// Version: 0.29
 // Date: 2023/01/28
 // - Read default stop/stop times for days from the Values sheet
 // - Updated header comments
@@ -250,6 +254,7 @@ To do:
 //
 function getWorkingTimeFromCalendar()
 {
+//return;
   let eventTitle = '';
 
 
@@ -265,6 +270,7 @@ function getWorkingTimeFromCalendar()
   const cSs = SpreadsheetApp.getActiveSpreadsheet();
   const cSheet = cSs.getActiveSheet();
   const cUI = SpreadsheetApp.getUi();
+  let myEmail = Session.getActiveUser().getEmail();
 
 
   // Get the associated calendar
@@ -487,17 +493,51 @@ function getWorkingTimeFromCalendar()
           wasEventAccepted = dayEvents[eventIndex].getMyStatus();
 
 
-          // Was event accepted as a Yes or a Maybe and I don't own the meeting
+          // Was event not accepted or declined
           // https://stackoverflow.com/questions/44102840/google-apps-script-for-calendar-searchfilter
           // https://developers.google.com/apps-script/reference/calendar/guest-status
-            if ((CalendarApp.GuestStatus.NO == wasEventAccepted) ||
-              (CalendarApp.GuestStatus.INVITED == wasEventAccepted)) { 
-              // Event can be skipped since it wasn't accepted as Yes or Maybe
-              // Events to which I've been invited but to which I've declined are listed as OWNER
+          if ((CalendarApp.GuestStatus.INVITED == wasEventAccepted) ||
+              (CalendarApp.GuestStatus.NO == wasEventAccepted)) {
+              // Event can be skipped since it was not accepted, declined,
               ++eventIndex;
               continue;
 
-          } // Was event accepted as a Yes or a Maybe and I don't own the meeting
+          } // Was event not accepted or declined
+
+
+          // Do I own the meeting but declined it
+          // https://stackoverflow.com/questions/41504049/how-to-test-if-the-owner-of-a-calendar-event-declined-it
+          let guestList = dayEvents[eventIndex].getGuestList(true);
+          let guestListLength = guestList.length;
+          if ((CalendarApp.GuestStatus.OWNER == wasEventAccepted) && (guestListLength > 0)) {
+            // I own the event and the event is a meeting (there are invitees)
+
+
+            // Did I as event owner decline the meeting?
+            let bDeclinedOwnEvent = false;
+            for (let guestListCounter = 0; guestListCounter < guestListLength; guestListCounter++) {
+
+              // Did I decline my own meeting?
+              if ((myEmail == guestList[guestListCounter].getEmail()) &&
+                  (CalendarApp.GuestStatus.NO == guestList[guestListCounter].getGuestStatus())) {
+                  // Yup, I declined my own meeting, so skip it
+                  bDeclinedOwnEvent = true;
+                  break;
+
+              } // Did I decline my own meeting?
+
+            } // Did I as event owner decline the meeting?
+
+
+            // Declined own event?
+            if (true == bDeclinedOwnEvent) {
+                // Declined own event
+                ++eventIndex;
+                continue;
+
+            } // Declined own event?
+
+          } // Do I own the meeting but declined it
 
 
           // Check for modifications to the start or end of the day
@@ -602,69 +642,77 @@ function getWorkingTimeFromCalendar()
 
 
             // Is it an out event on a non-working day?
-            if (false == eventTitle.startsWith(cOut)) {
-              // An out event on a non-working day, so working time is just the time of the appointments
-              // Out events are ignored on weekend days, holidays
-              // BUG: Double counts overlapping working events on non-work days
-              weekendWorkingTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
+            // BUG: Double counts overlapping working events on non-work days
+            weekendWorkingTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
+            ++eventIndex;
+            continue;
 
-
-            // Is the event a non-working event?
-            } else if (cNotFound != cNonWorkingTime.indexOf(eventTitle)) {
-              // Event is a non-working event and not a P Value for the current sheet
-              // May subtract time from the daily running total
-
-              // Is the end of the non-working event before the normal start of the work day?
-              // This can happen when I commute to work and don't have meetings until Stand up,
-              // so I want time from the end of my commute included in the working hours
-              if (eventEndTime < beginWorkingDay) {
-                // Non-working event occurs before the start of the working day,
-                // so reset beginning of working day to end of the event
-                beginWorkingDay = eventEndTime;
-
-              } // Is the end of the non-working event before the normal start of the work day?
-
-
-              // Does non-working event spans normal beginning of the work day?
-              if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
-                // Non-working time starts before the start of the working day
-                // and ends after the start of the working day (like I slept in)
-                // so reset beginning of working day to end of the event
-                beginWorkingDay = eventEndTime;
-
-              } // Does non-working event spans normal beginning of the work day?
-
-
-              // Non-working event during the working day?
-              if ((eventStartTime < endWorkingDay) && (eventEndTime < endWorkingDay)) {
-                // Non-working event start time falls within the working day (e.g., time for a personal event),
-                // so count the event duration as non-working time
-                nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
-
-              } // Non-working event during the working day?
-
-
-              // Non-working event is at or spans the end of the working day?
-              if ((eventStartTime < endWorkingDay) && (eventEndTime >= endWorkingDay)) {
-                // Non-working event begins before the end of the working day and the event
-                // ends after the working day ends, then reset the end of the working day
-                // to the beginning of the event
-                // Events found after this one will be treated like working events after the
-                // end of the normal working day
-                endWorkingDay = eventStartTime;
-
-              } // Non-working event is at or spans the end of the working day?
-
-
-              // If the non-working event is after the end of the working day, nothing needs to be done as
-              // the event won't be included in the calculation for working time
-
-            } // Is the event a non-working event and not a P Value event not for this sheet?
+          } // Is event on a weekend day or a holiday?
 
 
           // Not a non-working day, i.e., a work day
+          // Is the event a non-working event?
+          if (cNotFound != cNonWorkingTime.indexOf(eventTitle)) {
+            // Event is a non-working event and not on a weekend or a holiday
+
+
+            // Is the end of the non-working event before the normal start of the work day?
+            // This can happen when I commute to work and don't have meetings until Stand up,
+            // so I want time from the end of my commute included in the working hours
+            if (eventEndTime < beginWorkingDay) {
+              // Non-working event occurs before the start of the working day,
+              // so reset beginning of working day to end of the event
+              beginWorkingDay = eventEndTime;
+
+            } // Is the end of the non-working event before the normal start of the work day?
+
+
+            // Does non-working event spans normal beginning of the work day?
+            if ((eventStartTime < beginWorkingDay) &&
+                (eventEndTime > beginWorkingDay)) {
+              // Non-working event starts before the start of the working day
+              // and ends after the start of the working day (like I slept in)
+              // so reset beginning of working day to end of the event
+              beginWorkingDay = eventEndTime;
+
+            } // Does non-working event spans normal beginning of the work day?
+
+
+            // Non-working event during the working day?
+            if ((beginWorkingDay < eventEndTime) &&
+                (eventStartTime < endWorkingDay) &&
+                (eventEndTime < endWorkingDay)) {
+              // Non-working event start time falls within the working day (e.g., time for a personal event),
+              // so count the event duration as non-working time
+              nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
+
+            } // Non-working event during the working day?
+
+
+            // Non-working event is at or spans the end of the working day?
+            if ((eventStartTime < endWorkingDay) && (eventEndTime >= endWorkingDay)) {
+              // Non-working event begins before the end of the working day and the event
+              // ends after the working day ends, then reset the end of the working day
+              // to the beginning of the event
+              // Events found after this one will be treated like working events after the
+              // end of the normal working day
+              endWorkingDay = eventStartTime;
+
+            } // Non-working event is at or spans the end of the working day?
+
+
+            // If the non-working event is after the end of the working day, nothing needs to be done as
+            // the event won't be included in the calculation for working time
+
+            ++eventIndex;
+            continue;
+
+          } // Is the event a non-working event?
+
+
+          // Event is not a non-working event
           // Event ends before the working day?
-          } else if (eventEndTime < beginWorkingDay) {
+          if (eventEndTime < beginWorkingDay) {
             // End of the event is before beginning of working day,
             // so add event duration to after hours time
             beforeHoursTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
@@ -736,6 +784,7 @@ function getWorkingTimeFromCalendar()
 
 
           // Is it an out event not on a weekend or holiday?
+          // IS THIS NEEDED?
           if ((true == eventTitle.startsWith(cOut)) &&
             ((true != isWeekendDay) || (true != isHoliday))) {
             // It's an out event not on a weekend or holiday
