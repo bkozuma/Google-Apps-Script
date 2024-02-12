@@ -84,6 +84,33 @@ To do:
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
 //
+// Version: 0.35
+// Date: 2024/02/12
+// - Added name of sheet to dialog when processing is finished
+// - Embraced my inner (?) grammar nerd and indicated pluarity on the number of weeks processed
+//
+// Version: 0.34
+// Date: 2024/01/08
+// - Removed code that wasn't needed for an out event not on a non-working day since that case was already covered
+//
+//
+// Version: 0.33
+// Date: 2023/07/09
+// - Bug fixed where out events on working days occuring before  first actual working event had their time deducted
+//   from the shortened working day
+//
+//
+// Version: 0.32
+// Date: 2023/05/19
+// - Fixed improper handling of work events on working days where the default start/end of days wasn't being adjusted
+// - Bug where out events on all day out days are being counted as working time
+//
+//
+// Version: 0.31
+// Date: 2023/04/18
+// - Account for out events during an all day out event
+//
+//
 // Version: 0.30
 // Date: 2023/02/28
 // - Handle events that I own but declined
@@ -580,8 +607,8 @@ function getWorkingTimeFromCalendar()
               break;
 
             case 0:
-              // Yup, found a P value in eventTitle and not the same as the current sheet name,
-
+              // Yup, found a P value in eventTitle
+//STOP
 
               // Does the event span start of the working day
               if (eventEndTime < beginWorkingDay) {
@@ -620,7 +647,7 @@ function getWorkingTimeFromCalendar()
               continue;
 
             case 1:
-              // Found a pValue same as the current sheet
+              // Found a pValue and it is the same as the current sheet name
               currentSheetPValueDayHours += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
               ++eventIndex;
               continue;
@@ -641,19 +668,27 @@ function getWorkingTimeFromCalendar()
             // Event is on a weekend day or a holiday
 
 
-            // Is it an out event on a non-working day?
+            // Is event NOT an out event on a non-working day?
             // BUG: Double counts overlapping working events on non-work days
-            weekendWorkingTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
+            if (cNotFound == cNonWorkingTime.indexOf(eventTitle)) {
+              // Event is NOT an out event on a non-working day
+              // Add time to weektnd working gime
+              weekendWorkingTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
+
+            } // Is it an out event on a non-working day?
+
+
+            // Event is an out event on a non-working day,so continue
             ++eventIndex;
             continue;
 
           } // Is event on a weekend day or a holiday?
 
 
-          // Not a non-working day, i.e., a work day
-          // Is the event a non-working event?
+          // Is the event on a non-working day, i.e., a work day
+//          let temp = cNonWorkingTime.indexOf(eventTitle);
           if (cNotFound != cNonWorkingTime.indexOf(eventTitle)) {
-            // Event is a non-working event and not on a weekend or a holiday
+            // Event is on a working day, e.g., not on a weekend or a holiday
 
 
             // Is the end of the non-working event before the normal start of the work day?
@@ -703,14 +738,13 @@ function getWorkingTimeFromCalendar()
 
             // If the non-working event is after the end of the working day, nothing needs to be done as
             // the event won't be included in the calculation for working time
-
             ++eventIndex;
             continue;
 
-          } // Is the event a non-working event?
+          } // Is the event on a non-working day?
 
 
-          // Event is not a non-working event
+          // Event is not a non-working event and is not on a non-working day
           // Event ends before the working day?
           if (eventEndTime < beginWorkingDay) {
             // End of the event is before beginning of working day,
@@ -759,6 +793,10 @@ function getWorkingTimeFromCalendar()
               beginWorkingDay = eventStartTime;
 
 
+              // Set non-working time to 0 since restarting the beginning of the working day
+              nonWorkingTime = 0;
+
+
           // Event spans end of the working day
           } else if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
             // Start of event is before the end of the working day and end of event is after
@@ -781,16 +819,6 @@ function getWorkingTimeFromCalendar()
             afterHoursTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
 
           } // Event starts after the end of the working day
-
-
-          // Is it an out event not on a weekend or holiday?
-          // IS THIS NEEDED?
-          if ((true == eventTitle.startsWith(cOut)) &&
-            ((true != isWeekendDay) || (true != isHoliday))) {
-            // It's an out event not on a weekend or holiday
-            nonWorkingTime += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
-
-          } // Is it an out event not on a weekend or holiday?
 
 
           // Check next event
@@ -871,7 +899,11 @@ function getWorkingTimeFromCalendar()
 
 
   // Finish up
-  cUI.alert(cScriptName, 'Processed weeks: ' + numWeeksProcessed, cUI.ButtonSet.OK);
+  let sPluralIndicator = '';
+  if (numWeeksProcessed > 1) {
+    sPluralIndicator = 's';
+  }
+  cUI.alert(cScriptName, 'Processed ' + numWeeksProcessed + " week" + sPluralIndicator + " for sheet " + sheetName, cUI.ButtonSet.OK);
   return;
 
 } // getWorkingTimeFromCalendar
