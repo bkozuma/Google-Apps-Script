@@ -17,6 +17,11 @@
 // To be implemented
 //
 //
+// Version: 0.2
+// Date: 2024/02/13
+// - Taking out what should not have been there
+//
+//
 // Version: 0.1
 // Date: 2020/08/04
 // - Initial version
@@ -48,7 +53,7 @@ function CreateIssue() {
     "Accept": "application/json",
   //"authorization": "Basic <Base64 encoded email:API token>"
   // Use the following to test the authorization string from a command prompt
-  // curl --url https://ginkgobioworks.atlassian.net/rest/api/latest/issue/createmeta --header "Content-Type: application/json" --user "bkozuma@ginkgobioworks.com:HxGyRBAhjcSYCq6n8ZV70FA4"
+  // curl --url https://ginkgobioworks.atlassian.net/rest/api/latest/issue/createmeta --header "Content-Type: application/json" --user "bkozuma@ginkgobioworks.com:<Atlassian API token>"
 
   }; // Header information, including authorization information
 
