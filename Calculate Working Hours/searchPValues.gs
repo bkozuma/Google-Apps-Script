@@ -1,13 +1,23 @@
 /**
-* Searches the P values from the 2023 Ginkgo Hours Tracking Google Sheet
+* Searches the P values from the 2025 Ginkgo Hours Tracking Google Sheet
 *
 * @param {pValues, pItemToFind, pSheetName} Array of P Values, item to be found, sheet name
-* @return {-1 == pItemToFind not found,0 == pItemToFind found and not for pSheetName, 1 == if pItemToFind found and for pSheetName}
+* @return {-1 == pItemToFind not found in P Value list, 0 == pItemToFind found and not for pSheetName, 1 == if pItemToFind found and for pSheetName}
 * PValues[PValueIndex] = [ PNumber, PCodename, POther ];
 */
 //
 // Name: searchPValues
 // Author: Bruce Kozuma
+//
+//
+// Version: 0.3
+// Date: 2025/01/21
+// - Re-wrote for clarity of understanding
+//
+//
+// Version: 0.2
+// Date: 2024/01/08
+// - Fixed comment for clarity
 //
 //
 // Version: 0.1
@@ -18,46 +28,55 @@
 function searchPValues(pPValues, pItemToFind, pSheetName) {
   // Search for pItemToFind
   const cNotFound = -1;
-  const cFoundNotForPSheetName = 0;
-  const cItemToFindIsPSheetName = 1;
+  const cItemFoundNotForPSheetName = 0;
+  const cItemFoundForPSheetName = 1;
 
 
+  ////////////////////////////////////////////////////////////////////
+  // Cases to check for item to find
+  // * Case 1: item not found in P Value list
+  // * Case 2: item found in the P Value list
+  //   - Case 2a: Not for passed sheet name
+  //   - Case 2b: For passed sheet name
+  ////////////////////////////////////////////////////////////////////
   // loop for sets of P Values (outer array acting as container)
-  for(var outer = 0; outer < pPValues.length; outer++){
+  let numPValueSets = pPValues.length;
+  for(var outer = 0; outer < numPValueSets; outer++){
 
-    // Is the passed sheet name different from the P Number (first element)?
-    if (cNotFound != pItemToFind.indexOf(pPValues[outer][0])) {
-      // PName is same as the sheet name, so indicate so
-        return cItemToFindIsPSheetName;
+    // Is item in this set of P Values
+    let numPValues = pPValues[outer].length;
+    for(var inner = 0; inner < numPValues; inner++){
 
-    } // Is the passed sheet name different from the P Number (first element)?
+      // item to find in the P Value list, i.e., Case 2?
+      // BUG: Handle case where pValue is blank
+      let pValue = pPValues[outer][inner];
+      let pItemToFindFound = pItemToFind.indexOf(pValue);
+      if ( cNotFound != pItemToFindFound) {
+        // pItemToFind was found in PValue list
 
+        // Is item to find for the passed sheet name
+        // i.e., Case 2b
+        let pItemSheetName = pPValues[outer][0];
+        if (pSheetName == pItemSheetName) {
+          // Yup, item to find is for passed sheet name
+            return cItemFoundForPSheetName;
 
-    // Check other items for a match to a P Value
-    // Don't have to check P Number since we already checked that
-    for(var inner = 1; inner < pPValues[outer].length; inner++){
+        } else {
+          // item found in P Value list but not for the passed sheet name
+          // i.e., Case 2a
+          return cItemFoundNotForPSheetName;
 
-      // pItemToFind is as a P value?
-      if ( cNotFound != pItemToFind.indexOf(pPValues[outer][inner])) {
-        // pItemToFind is found as a P value
-        // Is pSheetName the P Number?
-        if (pSheetName == pPValues[outer][0]) {
-          // Yup, pSheetName is the P Number
-            return cItemToFindIsPSheetName;
+        } // item to find find in the P Value list?
 
-        } // // Is pItemToFind for the pSheetName, i.e., is a psuedonym?
+      } // item to find in the P Value list, i.e., Case 2?
 
-        // pItemToFind is not for the pSheetName
-        return cFoundNotForPSheetName;
-
-      } // pItemToFind is as a P value?
-
-    } // Check other items for a match to a P Value
+    } // Is item in this set of P Values
 
   } // loop for sets of P Values (outer array acting as container)
 
 
-  // Didn't return within the loops, so not found
+  // Didn't return within the loops, so item to find not found in P value list
+  // i.e., Case 1
   return cNotFound;
 
-} // function searchPValues(pPValues, pItemToFind, pSheetName)
+} // function searchPValues(pPValues, pItemToFind, pSheetName) 
