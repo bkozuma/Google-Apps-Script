@@ -1,4 +1,4 @@
-// Copyright 2020, 2021, 2022, 2023 Ginkgo Bioworks
+// Copyright 2020, 2021, 2022, 2023, 2024, 2025 Ginkgo Bioworks
 // SPDX-License-Identifier: BSD-3-Clause
 // https://opensource.org/licenses/BSD-3-Clause
 
@@ -83,6 +83,16 @@ To do:
 //
 // Name: getWorkingTimeFromCalendar
 // Author: Bruce Kozuma
+//
+// Version: 0.37
+// Date: 2025/01/25
+// - Fixing logic around non-working time
+// - Fixing nonsensical comments
+//
+// Version: 0.36
+// Date: 2025/01/20
+// - Updated copyright through 2025
+// - Updated to handle revamped searchPValues
 //
 // Version: 0.35
 // Date: 2024/02/12
@@ -282,6 +292,8 @@ To do:
 function getWorkingTimeFromCalendar()
 {
 //return;
+
+  // Defining this here so it shows at the top of the variable list in the debugger
   let eventTitle = '';
 
 
@@ -352,7 +364,6 @@ function getWorkingTimeFromCalendar()
   let beginCurrentDay = new Date();
   let endCurrentDay = new Date();
   let eventIndex = 0;
-//  let eventTitle = '';
   let eventMidnight = new Date();
   let eventYear = new Date();
   let eventMonth = new Date();
@@ -369,6 +380,7 @@ function getWorkingTimeFromCalendar()
   const cValuesSheetName = 'Values';
   const cOut = 'Out';
   const cNonWorkingTime = getNonWorkingTimeIndicators(cSs, cValuesSheetName);
+
 
   // End of working day in miliseconds from 00:00
   // Get from Google Calendar? When there is an API call for it
@@ -499,7 +511,7 @@ function getWorkingTimeFromCalendar()
           isAllDayEvent = dayEvents[eventIndex].isAllDayEvent();
 
 
-          // Is it a holiday or work on a day off?
+          // Is it a holiday or on a day off?
           if ((cNotFound != eventTitle.indexOf(cHoliday)) ||
               (isAllDayEvent && (true == eventTitle.startsWith(cOut)))) {
             isHoliday = true;
@@ -567,7 +579,7 @@ function getWorkingTimeFromCalendar()
           } // Do I own the meeting but declined it
 
 
-          // Check for modifications to the start or end of the day
+          // Check for need to modify  the start or end of the day
           // Handle event that started the previous day
           eventYear = eventEndTime.getFullYear();
           eventMonth = eventEndTime.getMonth();
@@ -597,22 +609,30 @@ function getWorkingTimeFromCalendar()
 
 
           // Is event related to a P value, e.g., P317, Diamond, Bayer?
-          //* @return {-1 == pItemToFind not found
+          // -1 == pItemToFind not found in P Value list
           // 0 == pItemToFind found and not for pSheetName,
-          // 1 == if pItemToFind found and for pSheetName}
+          // 1 == if pItemToFind found and for pSheetName
+          // Cases to work out:
+          // * On a reserved name sheet: That is already handled above
+          //   since we've already checked for reserved sheet names
+          // * On a non-reserved, non-P # sheet, e.g., Admin & Management
+          //   - Case 1: item not found in P Value list
+          //     -1 == pItemToFind not found in P Value list
+          //   - Case 2: item found in the P Value list
+          //     - Case 2a: Not for passed sheet name
+          //       0 == pItemToFind found and not for pSheetName,
+          //     - Case 2b: For passed sheet name
+          //       1 == if pItemToFind found and for pSheetName
           PValueFound = searchPValues(PValues, eventTitle, sheetName);
           switch(PValueFound) {
+            // Case 1: item not found in P Value list
+            // i.e., it's a regular item
             case cNotFound:
-              // Event title doesn't match a P value, so proceed
-              break;
-
-            case 0:
-              // Yup, found a P value in eventTitle
-//STOP
-
+/*
+//Maybe just do nothing if the code below this block already does all of this checking
               // Does the event span start of the working day
               if (eventEndTime < beginWorkingDay) {
-                // Non-working event occurs before the start of the working day,
+                // Event occurs before the start of the working day,
                 // Do nothing
 
               // Does event spans normal beginning of the work day?
@@ -625,29 +645,42 @@ function getWorkingTimeFromCalendar()
               } else if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
                 // Event spans end of the working day, so set end of the working day to
                 // beginning of event
-                endWorkingDay == eventStartTime;
+                endWorkingDay == eventEndTime;
 
               // Does the event start at the end of the working day?
               } else if (eventStartTime - endWorkingDay == 0) {
                 // Event starts at end of working day
                 // Do nothing
 
-              // Does event start after the working day
+              // Does event start after the end of the working day
               } else if (eventStartTime > endWorkingDay) {
                 // Event starts after the working day
                 // Do nothing
 
               } else {
+                // Event occurs during the working day
+                // Do nothing
+
                 // Event occurs during the working day so treat it like non-working time
-                nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
+//                nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
 
-              } // Is it after the end of the working day?
+              } // Does the event span start of the working day
+*/
+              break;
 
+            case 0:
+              // Case 2: Item found in the P Value list
+              // Case 2a: Not for passed sheet name
+              // Event title found in P value list, but not for current sheet, so don't count the hours
               ++eventIndex;
               continue;
 
             case 1:
-              // Found a pValue and it is the same as the current sheet name
+              // Case 2: Item found in the P Value list
+              // Case 2b: For passed sheet name
+              // Event title is in P value list and Event title is for the current sheet name,
+              // i.e., we're on the P value sheet that matches the event
+              // So add hours to current P number hours tally
               currentSheetPValueDayHours += Math.abs((eventEndTime - eventStartTime)) / cMilisecondsPerHour;
               ++eventIndex;
               continue;
@@ -685,8 +718,8 @@ function getWorkingTimeFromCalendar()
           } // Is event on a weekend day or a holiday?
 
 
+// Comment makes no sense
           // Is the event on a non-working day, i.e., a work day
-//          let temp = cNonWorkingTime.indexOf(eventTitle);
           if (cNotFound != cNonWorkingTime.indexOf(eventTitle)) {
             // Event is on a working day, e.g., not on a weekend or a holiday
 
@@ -716,7 +749,8 @@ function getWorkingTimeFromCalendar()
             // Non-working event during the working day?
             if ((beginWorkingDay < eventEndTime) &&
                 (eventStartTime < endWorkingDay) &&
-                (eventEndTime < endWorkingDay)) {
+                (eventEndTime <= endWorkingDay)) {
+//                (eventEndTime < endWorkingDay)) {
               // Non-working event start time falls within the working day (e.g., time for a personal event),
               // so count the event duration as non-working time
               nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
@@ -725,7 +759,8 @@ function getWorkingTimeFromCalendar()
 
 
             // Non-working event is at or spans the end of the working day?
-            if ((eventStartTime < endWorkingDay) && (eventEndTime >= endWorkingDay)) {
+            if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
+//            if ((eventStartTime < endWorkingDay) && (eventEndTime >= endWorkingDay)) {
               // Non-working event begins before the end of the working day and the event
               // ends after the working day ends, then reset the end of the working day
               // to the beginning of the event
