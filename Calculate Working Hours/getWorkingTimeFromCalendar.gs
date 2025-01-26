@@ -628,50 +628,13 @@ function getWorkingTimeFromCalendar()
             // Case 1: item not found in P Value list
             // i.e., it's a regular item
             case cNotFound:
-/*
-//Maybe just do nothing if the code below this block already does all of this checking
-              // Does the event span start of the working day
-              if (eventEndTime < beginWorkingDay) {
-                // Event occurs before the start of the working day,
-                // Do nothing
-
-              // Does event spans normal beginning of the work day?
-              } else if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
-                // Event spans beginning of the working day
-                // Set start of working day to end of event
-                beginWorkingDay == eventEndTime;
-
-              // Does the event span end of the working day
-              } else if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
-                // Event spans end of the working day, so set end of the working day to
-                // beginning of event
-                endWorkingDay == eventEndTime;
-
-              // Does the event start at the end of the working day?
-              } else if (eventStartTime - endWorkingDay == 0) {
-                // Event starts at end of working day
-                // Do nothing
-
-              // Does event start after the end of the working day
-              } else if (eventStartTime > endWorkingDay) {
-                // Event starts after the working day
-                // Do nothing
-
-              } else {
-                // Event occurs during the working day
-                // Do nothing
-
-                // Event occurs during the working day so treat it like non-working time
-//                nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
-
-              } // Does the event span start of the working day
-*/
               break;
 
             case 0:
               // Case 2: Item found in the P Value list
               // Case 2a: Not for passed sheet name
               // Event title found in P value list, but not for current sheet, so don't count the hours
+              nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
               ++eventIndex;
               continue;
 
@@ -711,75 +674,27 @@ function getWorkingTimeFromCalendar()
             } // Is it an out event on a non-working day?
 
 
-            // Event is an out event on a non-working day,so continue
+            // Event is an out event on a non-working day, so continue
             ++eventIndex;
             continue;
 
           } // Is event on a weekend day or a holiday?
 
 
-// Comment makes no sense
-          // Is the event on a non-working day, i.e., a work day
+          // Is the event a non-working event
           if (cNotFound != cNonWorkingTime.indexOf(eventTitle)) {
-            // Event is on a working day, e.g., not on a weekend or a holiday
-
-
-            // Is the end of the non-working event before the normal start of the work day?
-            // This can happen when I commute to work and don't have meetings until Stand up,
-            // so I want time from the end of my commute included in the working hours
-            if (eventEndTime < beginWorkingDay) {
-              // Non-working event occurs before the start of the working day,
-              // so reset beginning of working day to end of the event
-              beginWorkingDay = eventEndTime;
-
-            } // Is the end of the non-working event before the normal start of the work day?
-
-
-            // Does non-working event spans normal beginning of the work day?
-            if ((eventStartTime < beginWorkingDay) &&
-                (eventEndTime > beginWorkingDay)) {
-              // Non-working event starts before the start of the working day
-              // and ends after the start of the working day (like I slept in)
-              // so reset beginning of working day to end of the event
-              beginWorkingDay = eventEndTime;
-
-            } // Does non-working event spans normal beginning of the work day?
-
-
-            // Non-working event during the working day?
-            if ((beginWorkingDay < eventEndTime) &&
-                (eventStartTime < endWorkingDay) &&
-                (eventEndTime <= endWorkingDay)) {
-//                (eventEndTime < endWorkingDay)) {
-              // Non-working event start time falls within the working day (e.g., time for a personal event),
-              // so count the event duration as non-working time
+              // Non-working event is on a work day, so add to non-working time
               nonWorkingTime += Math.abs(eventEndTime.getTime() - eventStartTime.getTime()) / cMilisecondsPerHour;
 
-            } // Non-working event during the working day?
+              // Keep going through the rest of the routine since that checks if the event
+              // spans the end of the working day and if so, extends the end of the working
+              // day to the end of the event; otherwise, the working time could be over
+              // reduced by the length of the out event that extends beyond the working day
+
+          } // Is the event on a non-working day, i.e., a work day
 
 
-            // Non-working event is at or spans the end of the working day?
-            if ((eventStartTime < endWorkingDay) && (eventEndTime > endWorkingDay)) {
-//            if ((eventStartTime < endWorkingDay) && (eventEndTime >= endWorkingDay)) {
-              // Non-working event begins before the end of the working day and the event
-              // ends after the working day ends, then reset the end of the working day
-              // to the beginning of the event
-              // Events found after this one will be treated like working events after the
-              // end of the normal working day
-              endWorkingDay = eventStartTime;
-
-            } // Non-working event is at or spans the end of the working day?
-
-
-            // If the non-working event is after the end of the working day, nothing needs to be done as
-            // the event won't be included in the calculation for working time
-            ++eventIndex;
-            continue;
-
-          } // Is the event on a non-working day?
-
-
-          // Event is not a non-working event and is not on a non-working day
+          // Event is working event and is on a working day
           // Event ends before the working day?
           if (eventEndTime < beginWorkingDay) {
             // End of the event is before beginning of working day,
@@ -794,6 +709,9 @@ function getWorkingTimeFromCalendar()
             // so reset beginning of working day to start of event
             beginWorkingDay = eventStartTime - 1;
 
+            ++eventIndex;
+            continue;
+
 
           // Event spans beginning of working day
           } else if ((eventStartTime < beginWorkingDay) && (eventEndTime > beginWorkingDay)) {
@@ -805,6 +723,8 @@ function getWorkingTimeFromCalendar()
 
             // Event occurs after the beginning of working day and before the end of the working day
             // Nothing needs to be done as the will be included in the calculation for working time
+            ++eventIndex;
+            continue;
 
 
           // Event starts at the beginning working day
@@ -815,21 +735,8 @@ function getWorkingTimeFromCalendar()
             // working day to some nonsense value, which prevents the working day being set too late
             // Useful in cases where I start work at the default time
             defaultBeginWorkingDay = -1;
-
-
-          // Event starts after the beginning of the workday and the default hasn't changed
-          // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
-          } else if ((eventStartTime > beginWorkingDay) && (0 == beginWorkingDay - defaultBeginWorkingDay)) {
-              // Start of event is after the default start of the working day
-              // and the default start of the day hasn't been changed
-              // (i.e., there was another event even earlier than this one)
-              // so reset start of working day to beginning of the event
-              // i.e., I started work after the default time
-              beginWorkingDay = eventStartTime;
-
-
-              // Set non-working time to 0 since restarting the beginning of the working day
-              nonWorkingTime = 0;
+            ++eventIndex;
+            continue;
 
 
           // Event spans end of the working day
@@ -838,6 +745,9 @@ function getWorkingTimeFromCalendar()
             // end of working day, so reset end of working day to end of event
             endWorkingDay = eventEndTime;
 
+            ++eventIndex;
+            continue;
+
 
           // Event starts at end the working day
           // https://stackoverflow.com/questions/492994/compare-two-dates-with-javascript
@@ -845,6 +755,9 @@ function getWorkingTimeFromCalendar()
             // Start of event is at the end of the working day
             // so reset end of working day to end of event
             endWorkingDay = eventEndTime;
+
+            ++eventIndex;
+            continue;
 
 
           // Event starts after the end of the working day
