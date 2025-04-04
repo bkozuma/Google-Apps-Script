@@ -1,56 +1,46 @@
 /**
-* Gets the default working times from the 2023 Ginkgo Hours Tracking Google Sheet
+* Gets the indicators of non-working time for the 2023 Ginkgo Hours Tracking Google Sheet
 *
 * @param {pSpreadsheetApp, pValuesSheetName} Spreadsheet app, name of the sheet with values
-* @return {defaultTimes [defaultStartTime, defaultStopTime]}
+* @return {nonWorkingIndicators}
 */
 //
-// Name: getDefaultWorkingTime
+// Name: getNonWorkingTimeIndicators
 // Author: Bruce Kozuma
 //
 //
+// Version: 0.2
+// Date: 2023/05/19
+// - Change name of file to match name of function
+//
+//
 // Version: 0.1
-// Date: 2023/01/28
+// Date: 2023/01/24
 // - Initial release
 //
 //
-function getDefaultWorkingTime(pSpreadsheetApp, pValuesSheetName) {
-  // Get default start and stop times
+function getNonWorkingTimeIndicators(pSpreadsheetApp, pValuesSheetName) {
+  // Get non-working indicators
   let cValuesSheet = pSpreadsheetApp.getSheetByName(pValuesSheetName);
-  let cDefaultStartTimeRow = 3;
-  let cDefaultStopTimeRow = 4;
-  let cDefaultTimeCol = 12;
-  let range = 'R' +  cDefaultStartTimeRow + 'C' + cDefaultTimeCol;
-  let defaultStartTime = cValuesSheet.getRange(range).getValue().getHours();
-  let minutes = cValuesSheet.getRange(range).getValue().getMinutes();
-  // Is minute a single digit?
-  if (10 > minutes)
-  {
-    // Yes, so add a leading zero
-    defaultStartTime += ':0' + minutes;
+  let cNonWorkingIndicatorsStartRow = 3;
+  let cNonWorkingIndicatorStartCol = 7;
+  let nonWorkingIndicatorIndex = 0;
+  let nonWorkingIndicators = new Array();
+  let nonWorkingIndicatorRange = 'R' +  cNonWorkingIndicatorsStartRow + 'C' + cNonWorkingIndicatorStartCol;
+  let nonWorkingIndicator = cValuesSheet.getRange(nonWorkingIndicatorRange).getValue();
+  while ('' != nonWorkingIndicator) {
 
-  } else {
-    // Longer than one digit so just add it
-    defaultStartTime += ':' + minutes;
-    
-  } // Is minute a single digit?
-  
-  range = 'R' +  cDefaultStopTimeRow + 'C' + cDefaultTimeCol;
-  let defaultStopTime = cValuesSheet.getRange(range).getValue().getHours();
-  minutes = cValuesSheet.getRange(range).getValue().getMinutes();
-  // Is minute a single digit?
-  if (10 > minutes)
-  {
-    // Yes, so add a leading zero
-    defaultStopTime += ':0' + minutes;
+    // The cell isn't empty, so write reserved sheet names to array
+    nonWorkingIndicators[nonWorkingIndicatorIndex] = nonWorkingIndicator;
 
-  } else {
-    // Longer than one digit so just add it
-    defaultStopTime += ':' + minutes;
-    
-  } // Is minute a single digit?
 
-  let defaultTimes = [defaultStartTime, defaultStopTime];
-  return defaultTimes;
+    // Prepare for next loop
+    nonWorkingIndicatorIndex++;
+    nonWorkingIndicatorRange = 'R' +  (cNonWorkingIndicatorsStartRow + nonWorkingIndicatorIndex) + 'C' + cNonWorkingIndicatorStartCol;
+    nonWorkingIndicator = cValuesSheet.getRange(nonWorkingIndicatorRange).getValue();
 
-} // function getDefaultWorkingTime
+  } // Get non-working indicators
+
+  return nonWorkingIndicators;
+
+} // function getNonWorkingTimeIndicators
